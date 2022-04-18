@@ -3,285 +3,58 @@
 #include <GLFW/glfw3.h>
 
 #include "datas/binreader.hpp"
+#include "datas/fileinfo.hpp"
 #include "datas/flags.hpp"
 
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_opengl3.h"
+
 #include <glm/ext.hpp>
+#include <glm/gtx/dual_quaternion.hpp>
 
-enum TEXFlag : uint16 {
-  Cubemap,
-  Array,
-  Volume,
-  Compressed,
-  AlphaMasked,
-  NormalDeriveZAxis,
-  SignedNormal,
-  Swizzle,
-};
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
-struct TEXEntry {
-  uint16 target;
-  uint8 level;
-  uint8 reserved;
-  uint32 bufferSize;
-  uint64 bufferOffset;
-};
+#include "tex_format_ref.hpp"
+#include "texture.hpp"
 
-using TEXFlags = es::Flags<TEXFlag>;
+#include "render_cube.hpp"
 
-struct TEX {
-  static constexpr uint32 ID = CompileFourCC("TEX0");
-  uint32 id;
-  uint32 dataSize;
-  uint16 numEnries;
-  uint16 width;
-  uint16 height;
-  uint16 depth;
-  uint16 internalFormat;
-  uint16 format;
-  uint16 type;
-  uint16 target;
-  uint8 maxLevel;
-  uint8 numDims;
-  TEXFlags flags;
-  int32 swizzleMask[4];
-};
+#include "render_box.hpp"
 
-void ResizeWindow(GLFWwindow *, int newWidth, int newHeight) {
-  glViewport(0, 0, newWidth, newHeight);
-}
-
+/*
 unsigned MakeShaderProgram(TEXFlags flags) {
-  static const char *const vertexShader =
-      R"glsl(
-        #version 330 core
-        layout (location = 0) in vec3 inPos;
-        layout (location = 1) in vec2 inTex;
-        layout (location = 2) in vec3 inNormal;
+  GLint numActiveAttribs = 0;
+  GLint numActiveUniforms = 0;
+  glGetProgramInterfaceiv(program, GL_PROGRAM_INPUT, GL_ACTIVE_RESOURCES,
+                          &numActiveAttribs);
+  glGetProgramInterfaceiv(program, GL_UNIFORM, GL_ACTIVE_RESOURCES,
+                          &numActiveUniforms);
 
-        uniform mat4 transform;
+  std::vector<GLchar> nameData(256);
+  std::vector<GLenum> properties;
+  properties.push_back(GL_NAME_LENGTH);
+  properties.push_back(GL_TYPE);
+  properties.push_back(GL_ARRAY_SIZE);
+  properties.push_back(GL_LOCATION);
+  std::vector<GLint> values(properties.size());
+  for (int attrib = 0; attrib < numActiveUniforms; ++attrib) {
+    glGetProgramResourceiv(program, GL_UNIFORM, attrib, properties.size(),
+                           &properties[0], values.size(), NULL, &values[0]);
 
-        out vec2 TexCoord;
-        out vec3 Normal;
-
-        void main()
-        {
-            gl_Position = transform * vec4(inPos.xyz, 1.0);
-            TexCoord = inTex;
-            Normal = inNormal;
-        }
-    )glsl";
-
-  unsigned vshId = glCreateShader(GL_VERTEX_SHADER);
-  glShaderSource(vshId, 1, &vertexShader, nullptr);
-  glCompileShader(vshId);
-  static const char fragmentShaderBegin[] = "#version 330 core\n";
-  const char *fragmentShaderDef0 =
-      flags == TEXFlag::NormalDeriveZAxis ? "#define NORMAL_DERIVZ\n" : "";
-  const char *fragmentShaderDef1 =
-      flags == TEXFlag::SignedNormal ? "#define NORMAL_SIGNED\n" : "";
-
-  static const char fragmentShaderBody[] =
-      R"glsl(
-        out vec4 FragColor;
-
-        in vec2 TexCoord;
-        in vec3 Normal;
-        uniform sampler2D texture0;
-
-        void main()
-        {
-            #ifdef NORMAL_DERIVZ
-                #ifdef NORMAL_SIGNED
-                    vec2 normalTexture = texture(texture0, TexCoord).xy;
-                #else
-                    vec2 normalTexture = -1.f + (texture(texture0, TexCoord).xy) * 2.f;
-                #endif
-
-                float derived = clamp(dot(normalTexture, normalTexture), 0, 1);
-                vec3 outNormal = vec3(normalTexture, sqrt(1.f - derived));
-                FragColor = vec4((1.f + outNormal) * 0.5f, 1);
-            #else
-                FragColor = texture(texture0, TexCoord);
-            #endif
-        }
-    )glsl";
-
-  const char *fragmentShader[]{
-      fragmentShaderBegin,
-      fragmentShaderDef0,
-      fragmentShaderDef1,
-      fragmentShaderBody,
-  };
-
-  unsigned pshId = glCreateShader(GL_FRAGMENT_SHADER);
-  glShaderSource(pshId, 4, fragmentShader, nullptr);
-  glCompileShader(pshId);
-
-  int success;
-  glGetShaderiv(pshId, GL_COMPILE_STATUS, &success);
-  if (!success) {
-    char infoLog[512]{};
-    glGetShaderInfoLog(pshId, 512, NULL, infoLog);
-    printf("%s\n", infoLog);
+    nameData.resize(values[0]); // The length of the name.
+    glGetProgramResourceName(program, GL_UNIFORM, attrib, nameData.size(), NULL,
+                             &nameData[0]);
+    std::string name((char *)&nameData[0], nameData.size() - 1);
   }
-
-  unsigned program = glCreateProgram();
-  glAttachShader(program, vshId);
-  glAttachShader(program, pshId);
-  glLinkProgram(program);
-  glDeleteShader(vshId);
-  glDeleteShader(pshId);
 
   return program;
-}
-
-unsigned MakeVertexObjects() {
-  static int8 boxVerts[]{
-      1,  -1, 1,  0, 1, 0,  -1, 0,  //
-      -1, -1, 1,  1, 1, 0,  -1, 0,  //
-      -1, -1, -1, 1, 0, 0,  -1, 0,  //
-      1,  1,  -1, 1, 0, 0,  1,  0,  //
-      -1, 1,  -1, 0, 0, 0,  1,  0,  //
-      -1, 1,  1,  0, 1, 0,  1,  0,  //
-      1,  1,  -1, 1, 0, 1,  0,  0,  //
-      1,  1,  1,  0, 0, 1,  0,  0,  //
-      1,  -1, 1,  0, 1, 1,  0,  0,  //
-      1,  -1, 1,  1, 1, 0,  0,  1,  //
-      1,  1,  1,  1, 0, 0,  0,  1,  //
-      -1, 1,  1,  0, 0, 0,  0,  1,  //
-      -1, 1,  1,  1, 0, -1, 0,  0,  //
-      -1, 1,  -1, 0, 0, -1, 0,  0,  //
-      -1, -1, -1, 0, 1, -1, 0,  0,  //
-      1,  1,  -1, 0, 0, 0,  0,  -1, //
-      1,  -1, -1, 0, 1, 0,  0,  -1, //
-      -1, -1, -1, 1, 1, 0,  0,  -1, //
-      1,  -1, -1, 0, 0, 0,  -1, 0,  //
-      1,  -1, 1,  0, 1, 0,  -1, 0,  //
-      -1, -1, -1, 1, 0, 0,  -1, 0,  //
-      1,  1,  1,  1, 1, 0,  1,  0,  //
-      1,  1,  -1, 1, 0, 0,  1,  0,  //
-      -1, 1,  1,  0, 1, 0,  1,  0,  //
-      1,  -1, -1, 1, 1, 1,  0,  0,  //
-      1,  1,  -1, 1, 0, 1,  0,  0,  //
-      1,  -1, 1,  0, 1, 1,  0,  0,  //
-      -1, -1, 1,  0, 1, 0,  0,  1,  //
-      1,  -1, 1,  1, 1, 0,  0,  1,  //
-      -1, 1,  1,  0, 0, 0,  0,  1,  //
-      -1, -1, 1,  1, 1, -1, 0,  0,  //
-      -1, 1,  1,  1, 0, -1, 0,  0,  //
-      -1, -1, -1, 0, 1, -1, 0,  0,  //
-      -1, 1,  -1, 1, 0, 0,  0,  -1, //
-      1,  1,  -1, 0, 0, 0,  0,  -1, //
-      -1, -1, -1, 1, 1, 0,  0,  -1, //
-  };
-
-  unsigned vertArrays;
-  glGenVertexArrays(1, &vertArrays);
-  unsigned buf[1];
-  glGenBuffers(1, buf);
-
-  glBindVertexArray(vertArrays);
-
-  glBindBuffer(GL_ARRAY_BUFFER, buf[0]);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(boxVerts), boxVerts, GL_STATIC_DRAW);
-
-  glVertexAttribPointer(0, 3, GL_BYTE, GL_FALSE, 8, (void *)0);
-  glVertexAttribPointer(1, 2, GL_BYTE, GL_FALSE, 8, (void *)3);
-  glVertexAttribPointer(2, 3, GL_BYTE, GL_FALSE, 8, (void *)5);
-
-  glEnableVertexAttribArray(0);
-  glEnableVertexAttribArray(1);
-  glEnableVertexAttribArray(2);
-  return vertArrays;
-}
-
-struct NewTexture {
-  uint32 object;
-  uint32 type;
-  TEXFlags flags;
-};
-
-int max_aniso;
-
-NewTexture MakeTexture(std::string fileName) {
-  unsigned int texture;
-  glGenTextures(1, &texture);
-
-  TEX hdr;
-  std::vector<TEXEntry> entries;
-  std::string buffer;
-
-  {
-    BinReader rd(fileName + ".gth");
-    rd.Read(hdr);
-    rd.ReadContainer(entries, hdr.numEnries);
-  }
-  glBindTexture(hdr.target, texture);
-  glTexParameteri(hdr.target, GL_TEXTURE_WRAP_S, GL_REPEAT);
-  glTexParameteri(hdr.target, GL_TEXTURE_WRAP_T, GL_REPEAT);
-  glTexParameteri(hdr.target, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST);
-  glTexParameteri(hdr.target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  glTexParameteri(hdr.target, GL_TEXTURE_BASE_LEVEL, 0);
-  glTexParameteri(hdr.target, GL_TEXTURE_MAX_LEVEL, hdr.maxLevel);
-  glTexParameterf(hdr.target, GL_TEXTURE_MAX_ANISOTROPY_EXT, 8);
-
-  if (hdr.flags == TEXFlag::Swizzle) {
-    glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, hdr.swizzleMask);
-  }
-
-  {
-    BinReader rd(fileName + ".gtb");
-    rd.ReadContainer(buffer, hdr.dataSize);
-  }
-
-  if (hdr.flags == TEXFlag::Compressed) {
-    if (hdr.flags == TEXFlag::Volume) {
-      // not implemented
-    } else if (hdr.flags == TEXFlag::Array) {
-      // not implemented
-    } else {
-      if (hdr.numDims == 1) {
-        for (auto &e : entries) {
-          uint32_t width = hdr.width >> e.level;
-          glCompressedTexImage1D(e.target, e.level, hdr.internalFormat, width,
-                                 0, e.bufferSize,
-                                 buffer.data() + e.bufferOffset);
-        }
-      } else if (hdr.numDims == 2) {
-        for (auto &e : entries) {
-          uint32_t height = hdr.height >> e.level;
-          uint32_t width = hdr.width >> e.level;
-          glCompressedTexImage2D(e.target, e.level, hdr.internalFormat, width,
-                                 height, 0, e.bufferSize,
-                                 buffer.data() + e.bufferOffset);
-        }
-      }
-    }
-  } else {
-    if (hdr.flags == TEXFlag::Volume) {
-      // not implemented
-    } else if (hdr.flags == TEXFlag::Array) {
-      // not implemented
-    } else {
-      if (hdr.numDims == 1) {
-        for (auto &e : entries) {
-          uint32_t width = hdr.width >> e.level;
-          glTexImage1D(e.target, e.level, hdr.internalFormat, width, 0,
-                       hdr.format, hdr.type, buffer.data() + e.bufferOffset);
-        }
-      } else if (hdr.numDims == 2) {
-        for (auto &e : entries) {
-          uint32_t height = hdr.height >> e.level;
-          uint32_t width = hdr.width >> e.level;
-          glTexImage2D(e.target, e.level, hdr.internalFormat, width, height, 0,
-                       hdr.format, hdr.type, buffer.data() + e.bufferOffset);
-        }
-      }
-    }
-  }
-
-  return {texture, hdr.target, hdr.flags};
-};
+}*/
 
 static std::function<void(GLFWwindow *, double, double)> scrollFunc;
 
@@ -293,6 +66,10 @@ static std::function<void(GLFWwindow *, int, int, int)> mouseFunc;
 
 void MouseEvent(GLFWwindow *window, int button, int action, int mods) {
   mouseFunc(window, button, action, mods);
+}
+
+void ResizeWindow(GLFWwindow *, int newWidth, int newHeight) {
+  glViewport(0, 0, newWidth, newHeight);
 }
 
 int main(int argc, char *argv[]) {
@@ -319,17 +96,70 @@ int main(int argc, char *argv[]) {
     return 2;
   }
 
+  auto [lightTexture, lightTextureHdr] = MakeTexture([&] {
+    AFileInfo finf(argv[0]);
+    std::string retval(finf.GetFolder());
+    return retval + "res/light";
+  }());
+  auto [texture, textureHdr] = MakeTexture(argv[1]);
+
+  auto infoText = [&, &textureHdr = textureHdr] {
+    char infoBuffer[0x100];
+
+    auto FindEnumName = [](auto what) {
+      auto refl = GetReflectedEnum<decltype(what)>();
+      for (size_t r = 0; r < refl->numMembers; r++) {
+        if (refl->values[r] == uint64(what)) {
+          return refl->names[r];
+        }
+      }
+
+      return (const char *)nullptr;
+    };
+
+    auto typeStr =
+        textureHdr.flags[TEXFlag::Compressed]
+            ? FindEnumName(CompressedFormats(textureHdr.internalFormat))
+            : FindEnumName(InternalFormats(textureHdr.internalFormat));
+
+    snprintf(
+        infoBuffer, sizeof(infoBuffer),
+        "Type: %s\nWidth: %u\nHeight: %u\nMaxLevel: %u\nActiveLevel: %%u\n",
+        typeStr, textureHdr.width, textureHdr.height, textureHdr.maxLevel);
+    std::string retval(infoBuffer);
+
+    return retval;
+  }();
+
+  CubeObject cubeObj(textureHdr.flags);
+
+  float scale = 1;
+  auto UpdateProjection = [&] {
+    cubeObj.projection =
+        glm::perspective(glm::radians(45.0f * scale), 1.f, 0.1f, 100.0f);
+  };
+
   glGetIntegerv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &max_aniso);
 
-  auto vertexArrays = MakeVertexObjects();
-  auto [texture, textureTarget, flags] = MakeTexture(argv[1]);
-  auto mainProg = MakeShaderProgram(flags);
   int maxLevel;
   glGetTextureParameteriv(texture, GL_TEXTURE_MAX_LEVEL, &maxLevel);
   int lastLevel = 0;
-  float scale = 1;
-  scrollFunc = [&, &textureTarget = textureTarget, &texture = texture](
+
+  scrollFunc = [&, &textureTarget = textureHdr.target, &texture = texture](
                    GLFWwindow *window, double, double yoffset) {
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+      if (yoffset < 0) {
+        cubeObj.alphaTestThreshold -= 0.05f;
+      } else {
+        cubeObj.alphaTestThreshold += 0.05f;
+      }
+
+      cubeObj.alphaTestThreshold =
+          std::clamp(cubeObj.alphaTestThreshold, 0.f, 1.f);
+
+      return;
+    }
+
     if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) != GLFW_PRESS) {
       if (yoffset < 0) {
         scale *= 0.75f;
@@ -338,6 +168,7 @@ int main(int argc, char *argv[]) {
       }
 
       scale = std::clamp(scale, 0.001f, 2.f);
+      UpdateProjection();
       return;
     }
 
@@ -345,6 +176,7 @@ int main(int argc, char *argv[]) {
     lastLevel = std::max(0, lastLevel);
     lastLevel = std::min(maxLevel, lastLevel);
 
+    glBindTexture(textureTarget, texture);
     glTexParameteri(textureTarget, GL_TEXTURE_BASE_LEVEL, lastLevel);
   };
 
@@ -361,57 +193,143 @@ int main(int argc, char *argv[]) {
   glfwSetScrollCallback(window, ScrollEvent);
   glfwSetMouseButtonCallback(window, MouseEvent);
 
-  unsigned int transformLoc = glGetUniformLocation(mainProg, "transform");
-  glm::mat4 modelTM(1.f);
-  modelTM[3].z = -5;
+  ImGui::CreateContext();
+  ImGuiIO &io = ImGui::GetIO();
+  ImGui::StyleColorsDark();
+  bool initedglfw = ImGui_ImplGlfw_InitForOpenGL(window, true);
+  bool initedopengl = ImGui_ImplOpenGL3_Init();
+
+  constexpr float radius = 5;
+  glm::vec3 lookAtDirection{1, 0, 0};
+  glm::vec2 cameraYawPitch{};
+  glm::vec2 lightYawPitch{};
+  glm::vec3 cameraPosition{};
+
+  BoxObject boxObj;
+  boxObj.localPos.x = 2.f;
+  cubeObj.lightPos.x = radius;
+
+  auto UpdateCamera = [&] {
+    auto camera = glm::lookAt((lookAtDirection * radius), glm::vec3{},
+                              glm::vec3{0, 1, 0});
+    cubeObj.view = glm::dualquat(glm::quat(camera), camera[3]);
+    cubeObj.view =
+        glm::dualquat(glm::quat{1, 0, 0, 0}, cameraPosition) * cubeObj.view;
+  };
+
+  UpdateCamera();
+  UpdateProjection();
 
   glEnable(GL_CULL_FACE);
+  glEnable(GL_DEPTH_TEST);
+  glDepthFunc(GL_LESS);
 
   while (!glfwWindowShouldClose(window)) {
-    glm::vec2 cursorDelta;
-    int leftState = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
-    int middleState = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE);
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
 
-    if (leftState == GLFW_PRESS || middleState == GLFW_PRESS) {
-      glm::dvec2 cursorPos_;
-      glfwGetCursorPos(window, &cursorPos_.x, &cursorPos_.y);
-      glm::vec2 cursorPos = cursorPos_;
-      cursorDelta = cursorPos - lastCursorPos;
-      lastCursorPos = cursorPos;
-      cursorDelta = (cursorDelta / 512.f) * scale;
-    }
+    if (!ImGui::IsWindowFocused(ImGuiFocusedFlags_AnyWindow)) {
+      glm::vec2 cursorDelta;
+      int leftState = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
+      int rightState = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT);
 
-    if (middleState == GLFW_PRESS) {
-      modelTM = glm::rotate(modelTM, cursorDelta.x, glm::vec3(0.f, 1.f, 0.f));
-      modelTM = glm::rotate(modelTM, cursorDelta.y, glm::vec3(1.f, 0.f, 0.f));
-    }
+      if (leftState == GLFW_PRESS || rightState == GLFW_PRESS) {
+        glm::dvec2 cursorPos_;
+        glfwGetCursorPos(window, &cursorPos_.x, &cursorPos_.y);
+        glm::vec2 cursorPos = cursorPos_;
+        cursorDelta = cursorPos - lastCursorPos;
+        lastCursorPos = cursorPos;
+        cursorDelta = (cursorDelta / 512.f) * scale;
+      }
 
-    if (leftState == GLFW_PRESS) {
-      modelTM[3] += glm::vec4(cursorDelta.x, -cursorDelta.y, 0.f, 0.f);
+      if (leftState == GLFW_PRESS) {
+        if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS) {
+          lightYawPitch.x -= cursorDelta.x * 2;
+          lightYawPitch.y -= cursorDelta.y * 2;
+          constexpr float clampPi = glm::half_pi<float>() - 0.001;
+          lightYawPitch.y = glm::clamp(lightYawPitch.y, -clampPi, clampPi);
+          cubeObj.lightPos.x = (cos(lightYawPitch.x) * cos(lightYawPitch.y));
+          cubeObj.lightPos.y = sin(lightYawPitch.y);
+          cubeObj.lightPos.z = (sin(lightYawPitch.x) * cos(lightYawPitch.y));
+          boxObj.localPos = cubeObj.lightPos * 2.f;
+          cubeObj.lightPos *= radius;
+        } else {
+          cameraYawPitch.x += cursorDelta.x * 2;
+          cameraYawPitch.y += cursorDelta.y * 2;
+          constexpr float clampPi = glm::half_pi<float>() - 0.001;
+          cameraYawPitch.y = glm::clamp(cameraYawPitch.y, -clampPi, clampPi);
+          lookAtDirection.x = (cos(cameraYawPitch.x) * cos(cameraYawPitch.y));
+          lookAtDirection.y = sin(cameraYawPitch.y);
+          lookAtDirection.z = (sin(cameraYawPitch.x) * cos(cameraYawPitch.y));
+          UpdateCamera();
+        }
+      }
+
+      if (rightState == GLFW_PRESS) {
+        cameraPosition += glm::vec3(cursorDelta.x, -cursorDelta.y, 0.f);
+        UpdateCamera();
+      }
     }
 
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    glUseProgram(mainProg);
+    glBindTexture(textureHdr.target, texture);
+    cubeObj.Render();
+    glBindTexture(lightTextureHdr.target, lightTexture);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    boxObj.Render();
+    glDisable(GL_BLEND);
 
-    /*glm::mat4 mtx2(1.f);
-    mtx2 = glm::scale(mtx2, glm::vec3(scale));*/
-    auto proj = glm::perspective(glm::radians(45.0f * scale), 800.0f / 600.0f,
-                                 0.1f, 100.0f);
+    // ImGui::ShowDemoWindow();
+    ImGui::Begin("InfoText", nullptr,
+                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoInputs |
+                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+                     ImGuiWindowFlags_NoBackground |
+                     ImGuiWindowFlags_NoSavedSettings);
+    ImGui::SetWindowPos(ImVec2{260.f, 0.f});
+    ImGui::Text(infoText.c_str(), lastLevel);
+    ImGui::End();
+    ImGui::Begin("Settings", nullptr,
+                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoSavedSettings);
+    ImGui::SetWindowPos(ImVec2{0.f, 0.f});
+    ImGui::SetWindowSize(ImVec2{256.f, 1024.f});
+    if (ImGui::CollapsingHeader("Ambient Color",
+                                ImGuiTreeNodeFlags_DefaultOpen)) {
+      ImGui::ColorPicker3("ambColor", cubeObj.ambientColor,
+                          ImGuiColorEditFlags_NoLabel |
+                              ImGuiColorEditFlags_NoSmallPreview |
+                              ImGuiColorEditFlags_NoSidePreview);
+    }
 
-    auto mtx = proj * modelTM;
+    if (ImGui::CollapsingHeader("Light Color",
+                                ImGuiTreeNodeFlags_DefaultOpen)) {
+      ImGui::ColorPicker3("lightColor", cubeObj.lightColor,
+                          ImGuiColorEditFlags_NoLabel |
+                              ImGuiColorEditFlags_NoSmallPreview |
+                              ImGuiColorEditFlags_NoSidePreview);
+    }
 
-    glUniformMatrix4fv(transformLoc, 1, GL_FALSE,
-                       reinterpret_cast<float *>(&mtx));
-    glBindVertexArray(vertexArrays);
-    glBindTexture(textureTarget, texture);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
+    if (ImGui::CollapsingHeader("Specular", ImGuiTreeNodeFlags_DefaultOpen)) {
+      ImGui::SliderFloat("specLevel", &cubeObj.specLevel, 0, 100);
+      ImGui::SliderFloat("specPower", &cubeObj.specPower, 0, 256);
+    }
+    ImGui::End();
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
     glfwSwapBuffers(window);
     glfwPollEvents();
   }
 
+  ImGui_ImplOpenGL3_Shutdown();
+  ImGui_ImplGlfw_Shutdown();
+  ImGui::DestroyContext();
+
+  glfwDestroyWindow(window);
   glfwTerminate();
   return 0;
 }

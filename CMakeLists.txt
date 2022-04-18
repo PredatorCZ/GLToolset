@@ -26,6 +26,7 @@ add_subdirectory(${TPD_PATH}/precore/spike
 add_subdirectory(${TPD_PATH}/precore/gltf)
 set_target_properties(spike PROPERTIES OUTPUT_NAME gl_toolset)
 
+add_subdirectory(${TPD_PATH}/imgui)
 add_subdirectory(gltex_view)
 
 add_spike_subdir(gltex)

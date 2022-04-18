@@ -39,13 +39,13 @@ es::string_view filters[]{
 MAKE_ENUM(ENUMSCOPE(class RGBAType
                     : uint8, RGBAType),
           EMEMBER(RGBA, "8bit unsigned"),
-          EMEMBER(RGBA5551, "5bit RGB with 1bit alpha"),
+          // EMEMBER(RGBA5551, "5bit RGB with 1bit alpha"),
           EMEMBER(BC3, "aka DXT5"), EMEMBER(BC7));
 MAKE_ENUM(ENUMSCOPE(class RGBType
                     : uint8, RGBType),
           EMEMBER(RGBX, "8bit unsigned RGB with 8bit clean alpha padding"),
-          EMEMBER(RGB565, "5bit R and B, 6bit G"), EMEMBER(BC1, "aka DXT1"),
-          EMEMBER(BC7));
+          // EMEMBER(RGB565, "5bit R and B, 6bit G"),
+          EMEMBER(BC1, "aka DXT1"), EMEMBER(BC7));
 MAKE_ENUM(ENUMSCOPE(class RGType
                     : uint8, RGType),
           EMEMBER(RG, "8bit unsigned"), EMEMBER(BC5, "aka ATI2"), EMEMBER(BC7));
@@ -97,8 +97,6 @@ static AppInfo_s appInfo{
 };
 
 AppInfo_s *AppInitModule() {
-  RegisterReflectedTypes<RGBAType, RGBType, RGType, MonochromeType,
-                         NormalType>();
   return &appInfo;
 }
 
@@ -602,8 +600,8 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
       }
     } else if (rawData.origChannels == STBI_grey) {
       if (settings.monochromeType == MonochromeType::Monochrome) {
-        hdr.format = GL_R;
-        hdr.internalFormat = GL_R;
+        hdr.format = GL_RED;
+        hdr.internalFormat = GL_RED;
         hdr.type = GL_UNSIGNED_BYTE;
         entry.bufferSize = rawData.rawSize;
         wr.WriteBuffer(reinterpret_cast<char *>(rawData.data), rawData.rawSize);
