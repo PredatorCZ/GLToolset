@@ -23,38 +23,11 @@
 #include "tex_format_ref.hpp"
 #include "texture.hpp"
 
+std::string APP_PATH;
+
 #include "render_cube.hpp"
 
 #include "render_box.hpp"
-
-/*
-unsigned MakeShaderProgram(TEXFlags flags) {
-  GLint numActiveAttribs = 0;
-  GLint numActiveUniforms = 0;
-  glGetProgramInterfaceiv(program, GL_PROGRAM_INPUT, GL_ACTIVE_RESOURCES,
-                          &numActiveAttribs);
-  glGetProgramInterfaceiv(program, GL_UNIFORM, GL_ACTIVE_RESOURCES,
-                          &numActiveUniforms);
-
-  std::vector<GLchar> nameData(256);
-  std::vector<GLenum> properties;
-  properties.push_back(GL_NAME_LENGTH);
-  properties.push_back(GL_TYPE);
-  properties.push_back(GL_ARRAY_SIZE);
-  properties.push_back(GL_LOCATION);
-  std::vector<GLint> values(properties.size());
-  for (int attrib = 0; attrib < numActiveUniforms; ++attrib) {
-    glGetProgramResourceiv(program, GL_UNIFORM, attrib, properties.size(),
-                           &properties[0], values.size(), NULL, &values[0]);
-
-    nameData.resize(values[0]); // The length of the name.
-    glGetProgramResourceName(program, GL_UNIFORM, attrib, nameData.size(), NULL,
-                             &nameData[0]);
-    std::string name((char *)&nameData[0], nameData.size() - 1);
-  }
-
-  return program;
-}*/
 
 static std::function<void(GLFWwindow *, double, double)> scrollFunc;
 
@@ -68,18 +41,29 @@ void MouseEvent(GLFWwindow *window, int button, int action, int mods) {
   mouseFunc(window, button, action, mods);
 }
 
-void ResizeWindow(GLFWwindow *, int newWidth, int newHeight) {
-  glViewport(0, 0, newWidth, newHeight);
+static std::function<void(GLFWwindow *, int, int)> resizeFunc;
+
+void ResizeWindow(GLFWwindow *window, int newWidth, int newHeight) {
+  resizeFunc(window, newWidth, newHeight);
 }
 
+#include "datas/master_printer.hpp"
+
 int main(int argc, char *argv[]) {
+  es::print::AddPrinterFunction(es::Print);
+  AFileInfo finf(argv[0]);
+  APP_PATH = finf.GetFolder();
+
   glfwInit();
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
+  int width = 1024;
+  int height = 1024;
+
   GLFWwindow *window =
-      glfwCreateWindow(1024, 1024, "GLTex Viewer", nullptr, nullptr);
+      glfwCreateWindow(width, height, "GLTex Viewer", nullptr, nullptr);
 
   if (!window) {
     glfwTerminate();
@@ -87,7 +71,6 @@ int main(int argc, char *argv[]) {
   }
 
   glfwMakeContextCurrent(window);
-  glfwSetFramebufferSizeCallback(window, ResizeWindow);
 
   GLenum err = glewInit();
 
@@ -96,11 +79,7 @@ int main(int argc, char *argv[]) {
     return 2;
   }
 
-  auto [lightTexture, lightTextureHdr] = MakeTexture([&] {
-    AFileInfo finf(argv[0]);
-    std::string retval(finf.GetFolder());
-    return retval + "res/light";
-  }());
+  auto [lightTexture, lightTextureHdr] = MakeTexture(APP_PATH + "res/light");
   auto [texture, textureHdr] = MakeTexture(argv[1]);
 
   auto infoText = [&, &textureHdr = textureHdr] {
@@ -135,8 +114,15 @@ int main(int argc, char *argv[]) {
 
   float scale = 1;
   auto UpdateProjection = [&] {
-    cubeObj.projection =
-        glm::perspective(glm::radians(45.0f * scale), 1.f, 0.1f, 100.0f);
+    cubeObj.vsPosition.projection = glm::perspective(
+        glm::radians(45.0f * scale), float(width) / height, 0.1f, 100.0f);
+  };
+
+  resizeFunc = [&](GLFWwindow *, int newWidth, int newHeight) {
+    width = newWidth;
+    height = newHeight;
+    glViewport(0, 0, newWidth, newHeight);
+    UpdateProjection();
   };
 
   glGetIntegerv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &max_aniso);
@@ -145,9 +131,14 @@ int main(int argc, char *argv[]) {
   glGetTextureParameteriv(texture, GL_TEXTURE_MAX_LEVEL, &maxLevel);
   int lastLevel = 0;
 
+  glm::vec4 lightOrbit{1, 0, 0, 1.5};
+
   scrollFunc = [&, &textureTarget = textureHdr.target, &texture = texture](
                    GLFWwindow *window, double, double yoffset) {
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+    if (ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow)) {
+      return;
+    }
+    /*if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
       if (yoffset < 0) {
         cubeObj.alphaTestThreshold -= 0.05f;
       } else {
@@ -156,6 +147,16 @@ int main(int argc, char *argv[]) {
 
       cubeObj.alphaTestThreshold =
           std::clamp(cubeObj.alphaTestThreshold, 0.f, 1.f);
+
+      return;
+    }*/
+
+    if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS) {
+      if (yoffset < 0) {
+        lightOrbit.w -= 0.05f;
+      } else {
+        lightOrbit.w += 0.05f;
+      }
 
       return;
     }
@@ -192,6 +193,7 @@ int main(int argc, char *argv[]) {
 
   glfwSetScrollCallback(window, ScrollEvent);
   glfwSetMouseButtonCallback(window, MouseEvent);
+  glfwSetFramebufferSizeCallback(window, ResizeWindow);
 
   ImGui::CreateContext();
   ImGuiIO &io = ImGui::GetIO();
@@ -206,30 +208,30 @@ int main(int argc, char *argv[]) {
   glm::vec3 cameraPosition{};
 
   BoxObject boxObj;
-  boxObj.localPos.x = 2.f;
-  cubeObj.lightPos.x = radius;
 
   auto UpdateCamera = [&] {
     auto camera = glm::lookAt((lookAtDirection * radius), glm::vec3{},
                               glm::vec3{0, 1, 0});
-    cubeObj.view = glm::dualquat(glm::quat(camera), camera[3]);
-    cubeObj.view =
-        glm::dualquat(glm::quat{1, 0, 0, 0}, cameraPosition) * cubeObj.view;
+    cubeObj.vsPosition.view = glm::dualquat(glm::quat(camera), camera[3]);
+    cubeObj.vsPosition.view =
+        glm::dualquat(glm::quat{1, 0, 0, 0}, cameraPosition) *
+        cubeObj.vsPosition.view;
   };
 
   UpdateCamera();
   UpdateProjection();
+
+  bool lockedLight = false;
 
   glEnable(GL_CULL_FACE);
   glEnable(GL_DEPTH_TEST);
   glDepthFunc(GL_LESS);
 
   while (!glfwWindowShouldClose(window)) {
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
-    ImGui::NewFrame();
+    cubeObj.lights.lightPos[0] = lightOrbit * lightOrbit.w;
+    boxObj.localPos = cubeObj.lights.lightPos[0];
 
-    if (!ImGui::IsWindowFocused(ImGuiFocusedFlags_AnyWindow)) {
+    if (!io.WantCaptureMouse) {
       glm::vec2 cursorDelta;
       int leftState = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
       int rightState = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT);
@@ -244,20 +246,26 @@ int main(int argc, char *argv[]) {
       }
 
       if (leftState == GLFW_PRESS) {
-        if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS) {
-          lightYawPitch.x -= cursorDelta.x * 2;
-          lightYawPitch.y -= cursorDelta.y * 2;
-          constexpr float clampPi = glm::half_pi<float>() - 0.001;
+        constexpr float clampPi = glm::half_pi<float>() - 0.001;
+        const bool lightKey = glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS;
+        if (lockedLight || lightKey) {
+          if (lightKey) {
+            lightYawPitch.x -= cursorDelta.x * 2;
+            lightYawPitch.y -= cursorDelta.y * 2;
+          } else {
+            lightYawPitch.x += cursorDelta.x * 2;
+            lightYawPitch.y += cursorDelta.y * 2;
+          }
+
           lightYawPitch.y = glm::clamp(lightYawPitch.y, -clampPi, clampPi);
-          cubeObj.lightPos.x = (cos(lightYawPitch.x) * cos(lightYawPitch.y));
-          cubeObj.lightPos.y = sin(lightYawPitch.y);
-          cubeObj.lightPos.z = (sin(lightYawPitch.x) * cos(lightYawPitch.y));
-          boxObj.localPos = cubeObj.lightPos * 2.f;
-          cubeObj.lightPos *= radius;
-        } else {
+          lightOrbit.x = (cos(lightYawPitch.x) * cos(lightYawPitch.y));
+          lightOrbit.y = sin(lightYawPitch.y);
+          lightOrbit.z = (sin(lightYawPitch.x) * cos(lightYawPitch.y));
+        }
+
+        if (!lightKey) {
           cameraYawPitch.x += cursorDelta.x * 2;
           cameraYawPitch.y += cursorDelta.y * 2;
-          constexpr float clampPi = glm::half_pi<float>() - 0.001;
           cameraYawPitch.y = glm::clamp(cameraYawPitch.y, -clampPi, clampPi);
           lookAtDirection.x = (cos(cameraYawPitch.x) * cos(cameraYawPitch.y));
           lookAtDirection.y = sin(cameraYawPitch.y);
@@ -271,6 +279,10 @@ int main(int argc, char *argv[]) {
         UpdateCamera();
       }
     }
+
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
 
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -293,30 +305,41 @@ int main(int argc, char *argv[]) {
     ImGui::Text(infoText.c_str(), lastLevel);
     ImGui::End();
     ImGui::Begin("Settings", nullptr,
-                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove |
+                 ImGuiWindowFlags_NoTitleBar |
+                     ImGuiWindowFlags_AlwaysAutoResize |
                      ImGuiWindowFlags_NoSavedSettings);
-    ImGui::SetWindowPos(ImVec2{0.f, 0.f});
-    ImGui::SetWindowSize(ImVec2{256.f, 1024.f});
+    // ImGui::SetWindowPos(ImVec2{0.f, 0.f});
+    //  ImGui::SetWindowSize(ImVec2{256.f, 1024.f});
     if (ImGui::CollapsingHeader("Ambient Color",
                                 ImGuiTreeNodeFlags_DefaultOpen)) {
-      ImGui::ColorPicker3("ambColor", cubeObj.ambientColor,
+      ImGui::ColorPicker3("ambColor", &cubeObj.fragProps.ambientColor.x,
                           ImGuiColorEditFlags_NoLabel |
                               ImGuiColorEditFlags_NoSmallPreview |
                               ImGuiColorEditFlags_NoSidePreview);
     }
 
-    if (ImGui::CollapsingHeader("Light Color",
-                                ImGuiTreeNodeFlags_DefaultOpen)) {
-      ImGui::ColorPicker3("lightColor", cubeObj.lightColor,
+    if (ImGui::CollapsingHeader("Light 0", ImGuiTreeNodeFlags_DefaultOpen)) {
+      ImGui::ColorPicker3("color", &cubeObj.lightData.pointLight[0].color.x,
                           ImGuiColorEditFlags_NoLabel |
                               ImGuiColorEditFlags_NoSmallPreview |
                               ImGuiColorEditFlags_NoSidePreview);
+      ImGui::SliderFloat("distance", &lightOrbit.w, 0, 30);
+      ImGui::SliderFloat("quadAtten",
+                         &cubeObj.lightData.pointLight[0].attenuation.y, 0, 1);
+      ImGui::SliderFloat("cubicAtten",
+                         &cubeObj.lightData.pointLight[0].attenuation.z, 0, 2);
     }
 
     if (ImGui::CollapsingHeader("Specular", ImGuiTreeNodeFlags_DefaultOpen)) {
-      ImGui::SliderFloat("specLevel", &cubeObj.specLevel, 0, 100);
-      ImGui::SliderFloat("specPower", &cubeObj.specPower, 0, 256);
+      ImGui::SliderFloat("specLevel", &cubeObj.fragProps.specLevel, 0, 100);
+      ImGui::SliderFloat("specPower", &cubeObj.fragProps.specPower, 0, 256);
     }
+
+    ImGui::Checkbox("lockedLight", &lockedLight);
+
+    /*if (ImGui::CollapsingHeader("Debug", ImGuiTreeNodeFlags_DefaultOpen)) {
+      ImGui::Checkbox("Use TBN", &cubeObj.useTBN);
+    }*/
     ImGui::End();
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

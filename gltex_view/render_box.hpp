@@ -1,9 +1,8 @@
 
 struct BoxShaderProgram {
   static inline uint32 PROGRAMID = 0;
-  static inline uint32 viewLoc;
+  static inline uint32 vsPositionLoc;
   static inline uint32 localPosLoc;
-  static inline uint32 projectionLoc;
   static inline uint32 lightColorLoc;
 
   glm::vec3 localPos{};
@@ -20,8 +19,10 @@ struct BoxShaderProgram {
 
         out vec2 TexCoord;
 
-        uniform mat4 projection;
-        uniform vec4 view[2];
+        uniform VSPosition {
+          mat4 projection;
+          vec4 view[2];
+        };
         uniform vec3 localPos;
 
         vec3 transformDQ(vec4 dq[2], vec3 point) {
@@ -65,9 +66,9 @@ struct BoxShaderProgram {
     glDeleteShader(pshId);
 
     localPosLoc = glGetUniformLocation(PROGRAMID, "localPos");
-    viewLoc = glGetUniformLocation(PROGRAMID, "view");
-    projectionLoc = glGetUniformLocation(PROGRAMID, "projection");
+    vsPositionLoc = glGetUniformBlockIndex(PROGRAMID, "VSPosition");
     lightColorLoc = glGetUniformLocation(PROGRAMID, "lightColor");
+    glUniformBlockBinding(PROGRAMID, vsPositionLoc, MainShaderProgram::locations.ubPosition);
   }
 };
 
@@ -105,11 +106,8 @@ struct BoxObject : RenderObject, BoxShaderProgram {
   void Render() {
     glUseProgram(PROGRAMID);
     glBindVertexArray(VAOID);
-    glUniform4fv(viewLoc, 2, reinterpret_cast<float *>(&view));
     glUniform3fv(localPosLoc, 1, reinterpret_cast<float *>(&localPos));
-    glUniformMatrix4fv(projectionLoc, 1, GL_FALSE,
-                       reinterpret_cast<float *>(&projection));
-    glUniform3fv(lightColorLoc, 1, MainShaderProgram::lightColor);
+    glUniform3fv(lightColorLoc, 1, &MainShaderProgram::lightData.pointLight[0].color.x);
     glDrawArrays(GL_TRIANGLES, 0, 6);
   }
 };

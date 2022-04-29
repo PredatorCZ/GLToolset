@@ -21,6 +21,8 @@ set(GLTF_SHARED_LIB
 add_subdirectory(${TPD_PATH}/precore)
 include(targetex)
 
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+
 add_subdirectory(${TPD_PATH}/precore/spike
                  ${CMAKE_CURRENT_BINARY_DIR}/spike)
 add_subdirectory(${TPD_PATH}/precore/gltf)

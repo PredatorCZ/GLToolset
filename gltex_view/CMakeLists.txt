@@ -11,3 +11,5 @@ target_link_libraries(gltex_view PUBLIC glfw OpenGL::GL GLEW::GLEW precore ImGui
 file(COPY res DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
 target_include_directories(gltex_view PRIVATE ${TPD_PATH}/mikktspace)
+
+add_subdirectory(shaders)

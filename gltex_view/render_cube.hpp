@@ -1,242 +1,171 @@
-
-uint32 CompileShader(uint32 type, const char *const *data, size_t numChunks) {
-  unsigned shaderId = glCreateShader(type);
-  glShaderSource(shaderId, numChunks, data, nullptr);
-  glCompileShader(shaderId);
-
-  {
-    int success;
-    glGetShaderiv(shaderId, GL_COMPILE_STATUS, &success);
-    if (!success) {
-      char infoLog[512]{};
-      glGetShaderInfoLog(shaderId, 512, NULL, infoLog);
-      printf("%s\n", infoLog);
-    }
-  }
-
-  return shaderId;
-}
+#include "shader_compiler.hpp"
+#include "shaders/shader_classes.hpp"
 
 uint32 CompileShader(uint32 type, const char *const data) {
   return CompileShader(type, &data, 1);
 }
 
 struct MainShaderProgram {
+  static constexpr size_t NUM_LIGHTS = 1;
   static inline uint32 PROGRAMID = 0;
-  static inline uint32 alphaTestThresholdLoc;
-  static inline uint32 ambientColorLoc;
-  static inline uint32 lightColorLoc;
-  static inline uint32 projectionLoc;
-  static inline uint32 viewLoc;
-  static inline uint32 lightPosLoc;
-  static inline uint32 viewPosLoc;
-  static inline uint32 specPowerLoc;
-  static inline uint32 specLevelLoc;
+  static inline uint64 PROGRAMHASH = 0;
+  static inline BaseShaderLocations locations;
+  static inline uint32 LUB;
+  static inline uint32 LDUB;
+  static inline uint32 FPUB;
 
-  static inline float lightColor[3]{1, 1, 1};
-
-  float alphaTestThreshold = 0.1f;
-  float ambientColor[3]{0.7, 0.7, 0.7};
-  glm::vec3 lightPos{};
-  float specPower = 32;
-  float specLevel = 1.5;
+  static inline prime::shaders::ubLightData<NUM_LIGHTS> lightData{
+      prime::shaders::PointLight{{1.f, 1.f, 1.f}, true, {1.f, 0.05f, 0.025f}},
+      {}};
+  prime::shaders::ubLights<NUM_LIGHTS> lights{};
+  prime::shaders::single_texture::ubFragmentProperties fragProps{
+      {0.7, 0.7, 0.7}, 1.5, 32.f};
 
   MainShaderProgram(TEXFlags flags) {
+    if (flags[TEXFlag::NormalMap]) {
+      fragProps.ambientColor = {};
+      lightData.pointLight[0].color = glm::vec3{0.7f};
+    }
+
     if (PROGRAMID) {
       return;
     }
-    static const char *const vertexShader = R"glsl(
-        #version 330 core
-        layout (location = 0) in vec3 inPos;
-        layout (location = 1) in vec2 inTex;
-        layout (location = 2) in vec3 inNormal;
-        layout (location = 3) in vec4 inTangent;
-        layout (location = 4) in vec4 inQTangent;
 
-        uniform mat4 projection;
-        uniform vec4 view[2];
-        uniform vec3 lightPos;
-        uniform vec3 viewPos;
+    VertexShaderFeatures vsFeats;
+    vsFeats.tangentSpace = VSTSFeat::Quat;
+    vsFeats.numLights = NUM_LIGHTS;
+    // vsFeats.useInstances = true;
 
-        out vec2 TexCoord;
-        out vec3 FragPos;
-        out vec3 LightPos;
-        out vec3 ViewPos;
+    ShaderObject vsh =
+        CompileShaderObject(vsFeats, "shaders/single_texture/main.vert");
 
-        vec3 transformDQ(vec4 dq[2], vec3 point) {
-          vec3 real = dq[0].yzw;
-          vec3 dual = dq[1].yzw;
-          vec3 crs0 = cross(real, cross(real, point) + point * dq[0].x + dual);
-          vec3 crs1 = (crs0 + dual * dq[0].x - real * dq[1].x) * 2 + point;
-          return crs1;
-        }
+    FragmentShaderFeatures fsFeats;
+    fsFeats.signedNormal = flags == TEXFlag::SignedNormal;
+    fsFeats.deriveZNormal = flags == TEXFlag::NormalDeriveZAxis;
+    fsFeats.numLights = NUM_LIGHTS;
 
-        vec3 transformQ(vec4 q, vec3 point) {
-          vec3 qvec = q.yzw;
-          vec3 uv = cross(qvec, point);
-          vec3 uuv = cross(qvec, uv);
-
-          return point + ((uv * q.x) + uuv) * 2;
-        }
-
-        void main()
-        {
-            gl_Position = projection * vec4(transformDQ(view, inPos.xyz), 1.0);
-            TexCoord = inTex;
-
-            /*mat3 TBN;
-            TBN[2] = inNormal;
-            TBN[0] = inTangent.xyz;
-            TBN[1] = cross(inTangent.xyz, inNormal) * inTangent.w;
-
-            mat3 TBNt = transpose(TBN);
-            FragPos = TBNt * inPos.xyz;
-            LightPos = TBNt * lightPos;
-            ViewPos = TBNt * viewPos;*/
-
-            FragPos = transformQ(inQTangent, inPos.xyz);
-            LightPos = transformQ(inQTangent, lightPos);
-            ViewPos = transformQ(inQTangent, viewPos);
-        }
-    )glsl";
-
-    uint32 vshId = CompileShader(GL_VERTEX_SHADER, vertexShader);
-
-    static const char fragmentShaderBegin[] = "#version 330 core\n";
-    const char *fragmentShaderDef0 =
-        flags == TEXFlag::NormalDeriveZAxis ? "#define NORMAL_DERIVZ\n" : "";
-    const char *fragmentShaderDef1 =
-        flags == TEXFlag::SignedNormal ? "#define NORMAL_SIGNED\n" : "";
-
-    static const char fragmentShaderBody[] = R"glsl(
-        out vec4 FragColor;
-
-        in vec2 TexCoord;
-        in vec3 FragPos;
-        in vec3 LightPos;
-        in vec3 ViewPos;
-
-        uniform sampler2D texture0;
-        uniform float alphaTestThreshold = 0.1f;
-        uniform vec3 ambient;
-        uniform vec3 lightColor;
-        uniform float specPower = 32;
-        uniform float specLevel;
-
-        void main()
-        {
-            #ifdef NORMAL_DERIVZ
-                #ifdef NORMAL_SIGNED
-                    vec2 normalTexture = texture(texture0, TexCoord).xy;
-                #else
-                    vec2 normalTexture = -1.f + (texture(texture0, TexCoord).xy) * 2.f;
-                #endif
-
-                normalTexture *= vec2(1, -1);
-
-                float derived = clamp(dot(normalTexture, normalTexture), 0, 1);
-                vec3 outNormal = vec3(normalTexture, sqrt(1.f - derived));
-                vec3 normal = outNormal;
-
-                FragColor = vec4(1.f);
-            #else
-                vec3 normal = 0.f;
-                FragColor = texture(texture0, TexCoord);
-            #endif
-
-            vec3 lightDir = normalize(LightPos - FragPos);
-            vec3 light = max(dot(normal, lightDir), 0.0) * lightColor;
-
-            vec3 viewDir = normalize(ViewPos - FragPos);
-            vec3 reflectDir = reflect(-lightDir, normal);
-            float spec = pow(max(dot(viewDir, reflectDir), 0.0), specPower);
-            vec3 specular = specLevel * spec * lightColor;
-
-            FragColor = vec4((ambient + light + specular) * FragColor.xyz, 1);
-        }
-    )glsl";
-
-    const char *fragmentShader[]{
-        fragmentShaderBegin,
-        fragmentShaderDef0,
-        fragmentShaderDef1,
-        fragmentShaderBody,
-    };
-
-    uint32 pshId = CompileShader(GL_FRAGMENT_SHADER, fragmentShader, 4);
+    ShaderObject fsh = CompileShaderObject(
+        fsFeats, flags == TEXFlag::NormalMap
+                     ? "shaders/single_texture/main_normal.frag"
+                     : "shaders/single_texture/main_albedo.frag");
 
     PROGRAMID = glCreateProgram();
-    glAttachShader(PROGRAMID, vshId);
-    glAttachShader(PROGRAMID, pshId);
+    glAttachShader(PROGRAMID, vsh.objectId);
+    glAttachShader(PROGRAMID, fsh.objectId);
     glLinkProgram(PROGRAMID);
-    glDeleteShader(vshId);
-    glDeleteShader(pshId);
+    glDeleteShader(vsh.objectId);
+    glDeleteShader(fsh.objectId);
 
-    alphaTestThresholdLoc =
-        glGetUniformLocation(PROGRAMID, "alphaTestThreshold");
-    ambientColorLoc = glGetUniformLocation(PROGRAMID, "ambient");
-    lightColorLoc = glGetUniformLocation(PROGRAMID, "lightColor");
-    viewPosLoc = glGetUniformLocation(PROGRAMID, "viewPos");
-    lightPosLoc = glGetUniformLocation(PROGRAMID, "lightPos");
-    projectionLoc = glGetUniformLocation(PROGRAMID, "projection");
-    viewLoc = glGetUniformLocation(PROGRAMID, "view");
-    specPowerLoc = glGetUniformLocation(PROGRAMID, "specPower");
-    specLevelLoc = glGetUniformLocation(PROGRAMID, "specLevel");
+    PROGRAMHASH = vsh.objectHash | (uint64(fsh.objectHash) << 32);
+
+    locations = IntrospectShader(PROGRAMID);
+
+    glUniformBlockBinding(PROGRAMID, locations.ubPosition,
+                          locations.ubPosition);
+    glUniformBlockBinding(PROGRAMID, locations.ubLights, locations.ubLights);
+    glUniformBlockBinding(PROGRAMID, locations.ubFragmentProperties,
+                          locations.ubFragmentProperties);
+    glUniformBlockBinding(PROGRAMID, locations.ubLightData,
+                          locations.ubLightData);
+    glUniformBlockBinding(PROGRAMID, locations.ubInstanceTransforms,
+                          locations.ubInstanceTransforms);
+
+    glGenBuffers(1, &LUB);
+    glBindBuffer(GL_UNIFORM_BUFFER, LUB);
+    glBufferData(GL_UNIFORM_BUFFER, sizeof(lights), &lights, GL_STREAM_DRAW);
+    glBindBufferBase(GL_UNIFORM_BUFFER, locations.ubLights, LUB);
+
+    glGenBuffers(1, &LDUB);
+    glBindBuffer(GL_UNIFORM_BUFFER, LDUB);
+    glBufferData(GL_UNIFORM_BUFFER, sizeof(lightData), &lightData,
+                 GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_UNIFORM_BUFFER, locations.ubLightData, LDUB);
+
+    glGenBuffers(1, &FPUB);
+    glBindBuffer(GL_UNIFORM_BUFFER, FPUB);
+    glBufferData(GL_UNIFORM_BUFFER, sizeof(fragProps), &fragProps,
+                 GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_UNIFORM_BUFFER, locations.ubFragmentProperties, FPUB);
+  }
+
+  void UseProgram() {
+    glUseProgram(PROGRAMID);
+    glBindBuffer(GL_UNIFORM_BUFFER, LUB);
+    glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(lights), &lights);
+    glBindBuffer(GL_UNIFORM_BUFFER, LDUB);
+    glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(lightData), &lightData);
+    glBindBuffer(GL_UNIFORM_BUFFER, FPUB);
+    glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(fragProps), &fragProps);
   }
 };
 
 struct RenderObject {
-  static inline glm::mat4 projection;
-  static inline glm::dualquat view;
+  static inline uint32 UBID = 0;
+  static inline prime::shaders::ubPosition vsPosition;
+
+  RenderObject() {
+    if (UBID) {
+      return;
+    }
+
+    glGenBuffers(1, &UBID);
+    glBindBuffer(GL_UNIFORM_BUFFER, UBID);
+    glBufferData(GL_UNIFORM_BUFFER, sizeof(vsPosition), &vsPosition,
+                 GL_STREAM_DRAW);
+  }
 };
 
 #include "mikktspace.h"
 
 struct CubeObject : RenderObject, MainShaderProgram {
   static inline uint32 VAOID = 0;
+  static inline uint32 ITID = 0;
+  prime::shaders::InstanceTransforms<1, 1> transforms{
+      {{0.f, 0.f, 1.f, 1.f}}, {glm::quat{1, 0, 0, 0}}, {{1.f, 0.5f, 1.f}}};
 
   CubeObject(TEXFlags flags) : MainShaderProgram(flags) {
     if (VAOID) {
       return;
     }
 
+    // pos3 uv2 normal3 tangent4
     static int8 boxVerts[]{
-        1,  -1, 1,  0, 1, 0,  -1, 0,  -1, 0, 0, -1,//
-        -1, -1, 1,  1, 1, 0,  -1, 0,  -1, 0, 0, -1,//
-        -1, -1, -1, 1, 0, 0,  -1, 0,  -1, 0, 0, -1,//
-        1,  1,  -1, 1, 0, 0,  1,  0,  1, 0, 0, -1,//
-        -1, 1,  -1, 0, 0, 0,  1,  0,  1, 0, 0, -1,//
-        -1, 1,  1,  0, 1, 0,  1,  0,  1, 0, 0, -1,//
-        1,  1,  -1, 1, 0, 1,  0,  0,  0, 0, -1, -1,//
-        1,  1,  1,  0, 0, 1,  0,  0,  0, 0, -1, -1,//
-        1,  -1, 1,  0, 1, 1,  0,  0,  0, 0, -1, -1,//
-        1,  -1, 1,  1, 1, 0,  0,  1,  1, 0, 0, -1,//
-        1,  1,  1,  1, 0, 0,  0,  1,  1, 0, 0, -1,//
-        -1, 1,  1,  0, 0, 0,  0,  1,  1, 0, 0, -1,//
-        -1, 1,  1,  1, 0, -1, 0,  0,  0, 0, 1, -1,//
-        -1, 1,  -1, 0, 0, -1, 0,  0,  0, 0, 1, -1,//
-        -1, -1, -1, 0, 1, -1, 0,  0,  0, 0, 1, -1,//
-        1,  1,  -1, 0, 0, 0,  0,  -1, -1, 0, 0, -1,//
-        1,  -1, -1, 0, 1, 0,  0,  -1, -1, 0, 0, -1,//
-        -1, -1, -1, 1, 1, 0,  0,  -1, -1, 0, 0, -1,//
-        1,  -1, -1, 0, 0, 0,  -1, 0,  -1, 0, 0, -1,//
-        1,  -1, 1,  0, 1, 0,  -1, 0,  -1, 0, 0, -1,//
-        -1, -1, -1, 1, 0, 0,  -1, 0,  -1, 0, 0, -1,//
-        1,  1,  1,  1, 1, 0,  1,  0,  1, 0, 0, -1,//
-        1,  1,  -1, 1, 0, 0,  1,  0,  1, 0, 0, -1,//
-        -1, 1,  1,  0, 1, 0,  1,  0,  1, 0, 0, -1,//
-        1,  -1, -1, 1, 1, 1,  0,  0,  0, 0, -1, -1,//
-        1,  1,  -1, 1, 0, 1,  0,  0,  0, 0, -1, -1,//
-        1,  -1, 1,  0, 1, 1,  0,  0,  0, 0, -1, -1,//
-        -1, -1, 1,  0, 1, 0,  0,  1,  1, 0, 0, -1,//
-        1,  -1, 1,  1, 1, 0,  0,  1,  1, 0, 0, -1,//
-        -1, 1,  1,  0, 0, 0,  0,  1,  1, 0, 0, -1,//
-        -1, -1, 1,  1, 1, -1, 0,  0,  0, 0, 1, -1,//
-        -1, 1,  1,  1, 0, -1, 0,  0,  0, 0, 1, -1,//
-        -1, -1, -1, 0, 1, -1, 0,  0,  0, 0, 1, -1,//
-        -1, 1,  -1, 1, 0, 0,  0,  -1, -1, 0, 0, -1,//
-        1,  1,  -1, 0, 0, 0,  0,  -1, -1, 0, 0, -1,//
-        -1, -1, -1, 1, 1, 0,  0,  -1, -1, 0, 0, -1,//
+        1,  -1, 1,  0, 1, 0,  -1, 0,  -1, 0, 0,  -1, //
+        -1, -1, 1,  1, 1, 0,  -1, 0,  -1, 0, 0,  -1, //
+        -1, -1, -1, 1, 0, 0,  -1, 0,  -1, 0, 0,  -1, //
+        1,  1,  -1, 1, 0, 0,  1,  0,  1,  0, 0,  -1, //
+        -1, 1,  -1, 0, 0, 0,  1,  0,  1,  0, 0,  -1, //
+        -1, 1,  1,  0, 1, 0,  1,  0,  1,  0, 0,  -1, //
+        1,  1,  -1, 1, 0, 1,  0,  0,  0,  0, -1, -1, //
+        1,  1,  1,  0, 0, 1,  0,  0,  0,  0, -1, -1, //
+        1,  -1, 1,  0, 1, 1,  0,  0,  0,  0, -1, -1, //
+        1,  -1, 1,  1, 1, 0,  0,  1,  1,  0, 0,  -1, //
+        1,  1,  1,  1, 0, 0,  0,  1,  1,  0, 0,  -1, //
+        -1, 1,  1,  0, 0, 0,  0,  1,  1,  0, 0,  -1, //
+        -1, 1,  1,  1, 0, -1, 0,  0,  0,  0, 1,  -1, //
+        -1, 1,  -1, 0, 0, -1, 0,  0,  0,  0, 1,  -1, //
+        -1, -1, -1, 0, 1, -1, 0,  0,  0,  0, 1,  -1, //
+        1,  1,  -1, 0, 0, 0,  0,  -1, -1, 0, 0,  -1, //
+        1,  -1, -1, 0, 1, 0,  0,  -1, -1, 0, 0,  -1, //
+        -1, -1, -1, 1, 1, 0,  0,  -1, -1, 0, 0,  -1, //
+        1,  -1, -1, 0, 0, 0,  -1, 0,  -1, 0, 0,  -1, //
+        1,  -1, 1,  0, 1, 0,  -1, 0,  -1, 0, 0,  -1, //
+        -1, -1, -1, 1, 0, 0,  -1, 0,  -1, 0, 0,  -1, //
+        1,  1,  1,  1, 1, 0,  1,  0,  1,  0, 0,  -1, //
+        1,  1,  -1, 1, 0, 0,  1,  0,  1,  0, 0,  -1, //
+        -1, 1,  1,  0, 1, 0,  1,  0,  1,  0, 0,  -1, //
+        1,  -1, -1, 1, 1, 1,  0,  0,  0,  0, -1, -1, //
+        1,  1,  -1, 1, 0, 1,  0,  0,  0,  0, -1, -1, //
+        1,  -1, 1,  0, 1, 1,  0,  0,  0,  0, -1, -1, //
+        -1, -1, 1,  0, 1, 0,  0,  1,  1,  0, 0,  -1, //
+        1,  -1, 1,  1, 1, 0,  0,  1,  1,  0, 0,  -1, //
+        -1, 1,  1,  0, 0, 0,  0,  1,  1,  0, 0,  -1, //
+        -1, -1, 1,  1, 1, -1, 0,  0,  0,  0, 1,  -1, //
+        -1, 1,  1,  1, 0, -1, 0,  0,  0,  0, 1,  -1, //
+        -1, -1, -1, 0, 1, -1, 0,  0,  0,  0, 1,  -1, //
+        -1, 1,  -1, 1, 0, 0,  0,  -1, -1, 0, 0,  -1, //
+        1,  1,  -1, 0, 0, 0,  0,  -1, -1, 0, 0,  -1, //
+        -1, -1, -1, 1, 1, 0,  0,  -1, -1, 0, 0,  -1, //
     };
 
     static glm::quat tangentSpace[36];
@@ -312,10 +241,9 @@ struct CubeObject : RenderObject, MainShaderProgram {
 
     genTangSpaceDefault(&ctx);
     for (size_t i = 0; i < 36; i++) {
-      printf("%.0f, %.0f, %.0f, %.0f\n", tangentSpace[i * 4], tangentSpace[1 + i * 4],
-             tangentSpace[2 + i * 4], tangentSpace[3 + i * 4]);
+      printf("%.0f, %.0f, %.0f, %.0f\n", tangentSpace[i * 4], tangentSpace[1 + i
+    * 4], tangentSpace[2 + i * 4], tangentSpace[3 + i * 4]);
     }*/
-
 
     glGenVertexArrays(1, &VAOID);
     glBindVertexArray(VAOID);
@@ -324,37 +252,40 @@ struct CubeObject : RenderObject, MainShaderProgram {
     glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
     glBufferData(GL_ARRAY_BUFFER, sizeof(boxVerts), boxVerts, GL_STATIC_DRAW);
 
-    glVertexAttribPointer(0, 3, GL_BYTE, GL_FALSE, 12, (void *)0);
-    glVertexAttribPointer(1, 2, GL_BYTE, GL_FALSE, 12, (void *)3);
-    glVertexAttribPointer(2, 3, GL_BYTE, GL_FALSE, 12, (void *)5);
-    glVertexAttribPointer(3, 4, GL_BYTE, GL_FALSE, 12, (void *)8);
+    glVertexAttribPointer(locations.inPos, 3, GL_BYTE, GL_FALSE, 12, (void *)0);
+    glVertexAttribPointer(locations.inTexCoord20, 2, GL_BYTE, GL_FALSE, 12,
+                          (void *)3);
+    // glVertexAttribPointer(2, 3, GL_BYTE, GL_FALSE, 12, (void *)5);
+    // glVertexAttribPointer(3, 4, GL_BYTE, GL_FALSE, 12, (void *)8);
 
-    glEnableVertexAttribArray(0);
-    glEnableVertexAttribArray(1);
-    glEnableVertexAttribArray(2);
-    glEnableVertexAttribArray(3);
+    glEnableVertexAttribArray(locations.inPos);
+    glEnableVertexAttribArray(locations.inTexCoord20);
+    // glEnableVertexAttribArray(2);
+    // glEnableVertexAttribArray(3);
 
     glGenBuffers(1, &vertexBuffer);
     glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(tangentSpace), tangentSpace, GL_STATIC_DRAW);
-    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, 16, (void *)0);
-    glEnableVertexAttribArray(4);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(tangentSpace), tangentSpace,
+                 GL_STATIC_DRAW);
+    glVertexAttribPointer(locations.inQTangent, 4, GL_FLOAT, GL_FALSE, 16,
+                          (void *)0);
+    glEnableVertexAttribArray(locations.inQTangent);
+
+    glBindBufferBase(GL_UNIFORM_BUFFER, locations.ubPosition, UBID);
+
+    glGenBuffers(1, &ITID);
+    glBindBuffer(GL_UNIFORM_BUFFER, ITID);
+    glBufferData(GL_UNIFORM_BUFFER, sizeof(transforms), &transforms,
+                 GL_STREAM_DRAW);
+    glBindBufferBase(GL_UNIFORM_BUFFER, locations.ubInstanceTransforms, ITID);
   }
 
   void Render() {
-    glUseProgram(PROGRAMID);
+    lights.viewPos = glm::vec3{} * vsPosition.view;
+    UseProgram();
     glBindVertexArray(VAOID);
-    glUniform1f(alphaTestThresholdLoc, alphaTestThreshold);
-    glUniform3fv(ambientColorLoc, 1, ambientColor);
-    glUniform3fv(lightColorLoc, 1, lightColor);
-    glm::vec3 viewPos = glm::vec3{} * view;
-    glUniform3fv(viewPosLoc, 1, reinterpret_cast<float *>(&viewPos));
-    glUniformMatrix4fv(projectionLoc, 1, GL_FALSE,
-                       reinterpret_cast<float *>(&projection));
-    glUniform4fv(viewLoc, 2, reinterpret_cast<float *>(&view));
-    glUniform3fv(lightPosLoc, 1, reinterpret_cast<float *>(&lightPos));
-    glUniform1f(specLevelLoc, specLevel);
-    glUniform1f(specPowerLoc, specPower);
+    glBindBuffer(GL_UNIFORM_BUFFER, UBID);
+    glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(vsPosition), &vsPosition);
     glDrawArrays(GL_TRIANGLES, 0, 36);
   }
 };

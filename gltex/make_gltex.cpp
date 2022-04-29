@@ -20,7 +20,6 @@
 #include "datas/binwritter.hpp"
 #include "datas/directory_scanner.hpp"
 #include "datas/fileinfo.hpp"
-#include "datas/flags.hpp"
 #include "datas/master_printer.hpp"
 #include "datas/reflector.hpp"
 #include "datas/vectors_simd.hpp"
@@ -28,6 +27,7 @@
 #include "project.h"
 #include "stb_image.h"
 #include "stb_image_resize.h"
+#include "tex.hpp"
 #include <GL/gl.h>
 #include <GL/glext.h>
 
@@ -96,9 +96,7 @@ static AppInfo_s appInfo{
     filters,
 };
 
-AppInfo_s *AppInitModule() {
-  return &appInfo;
-}
+AppInfo_s *AppInitModule() { return &appInfo; }
 
 bool AppInitContext(const std::string &) {
   if (!settings.normalMapPatterns.empty()) {
@@ -255,43 +253,6 @@ uint16 texture2DInternalFormat[]{
     GL_RGBA32UI,
 };
 
-enum TEXFlags : uint16 {
-  Cubemap,
-  Array,
-  Volume,
-  Compressed,
-  AlphaMasked,
-  NormalDeriveZAxis,
-  SignedNormal,
-  Swizzle,
-};
-
-struct TEXEntry {
-  uint16 target;
-  uint8 level;
-  uint8 reserved;
-  uint32 bufferSize;
-  uint64 bufferOffset;
-};
-
-struct TEX {
-  static constexpr uint32 ID = CompileFourCC("TEX0");
-  uint32 id;
-  uint32 dataSize;
-  uint16 numEnries;
-  uint16 width;
-  uint16 height;
-  uint16 depth;
-  uint16 internalFormat;
-  uint16 format;
-  uint16 type;
-  uint16 target;
-  uint8 maxLevel;
-  uint8 numDims;
-  es::Flags<TEXFlags> flags;
-  int32 swizzleMask[4];
-};
-
 struct RawImageData {
   void *data;
   uint32 rawSize;
@@ -365,12 +326,15 @@ RawImageData GetImageData(BinReaderRef rd, bool isNormalMap) {
     memset(nData, 0, x * y * desiredChannels);
 
     for (int p = 0; p < x * y; p++) {
-      memcpy(nData + (p * desiredChannels), data + (p * channels),
-             desiredChannels);
+      char *destData = nData + (p * desiredChannels);
+      memcpy(destData, data + (p * channels), desiredChannels);
+      if (isNormalMap) {
+        reinterpret_cast<uint8 &>(destData[1]) = 0xff - reinterpret_cast<uint8 &>(destData[1]);
+      }
     }
 
     free(data);
-    data = reinterpret_cast<uint8_t *>(nData);
+    data = reinterpret_cast<uint8 *>(nData);
     channels = desiredChannels;
   };
 
@@ -516,7 +480,7 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
     entry.bufferOffset = wr.Tell();
 
     if (rawData.origChannels == STBI_rgb_alpha) {
-      hdr.flags += TEXFlags::AlphaMasked;
+      hdr.flags += TEXFlag::AlphaMasked;
 
       if (settings.rgbaType == RGBAType::RGBA) {
         hdr.format = GL_RGBA;
@@ -525,7 +489,7 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
         entry.bufferSize = rawData.rawSize;
         wr.WriteBuffer(reinterpret_cast<char *>(rawData.data), rawData.rawSize);
       } else if (settings.rgbaType == RGBAType::BC3) {
-        hdr.flags += TEXFlags::Compressed;
+        hdr.flags += TEXFlag::Compressed;
         hdr.internalFormat = GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
         entry.bufferSize = rawData.bcSize * 16;
         std::string buffer;
@@ -533,7 +497,7 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
         CompressBlocksBC3(&surf, reinterpret_cast<uint8_t *>(buffer.data()));
         wr.WriteContainer(buffer);
       } else if (settings.rgbaType == RGBAType::BC7) {
-        hdr.flags += TEXFlags::Compressed;
+        hdr.flags += TEXFlag::Compressed;
         hdr.internalFormat = GL_COMPRESSED_RGBA_BPTC_UNORM;
         entry.bufferSize = rawData.bcSize * 16;
         std::string buffer;
@@ -552,7 +516,7 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
         entry.bufferSize = rawData.rawSize;
         wr.WriteBuffer(reinterpret_cast<char *>(rawData.data), rawData.rawSize);
       } else if (settings.rgbType == RGBType::BC1) {
-        hdr.flags += TEXFlags::Compressed;
+        hdr.flags += TEXFlag::Compressed;
         hdr.internalFormat = GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
         entry.bufferSize = rawData.bcSize * 8;
         std::string buffer;
@@ -560,7 +524,7 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
         CompressBlocksBC1(&surf, reinterpret_cast<uint8_t *>(buffer.data()));
         wr.WriteContainer(buffer);
       } else if (settings.rgbType == RGBType::BC7) {
-        hdr.flags += TEXFlags::Compressed;
+        hdr.flags += TEXFlag::Compressed;
         hdr.internalFormat = GL_COMPRESSED_RGBA_BPTC_UNORM;
         entry.bufferSize = rawData.bcSize * 16;
         std::string buffer;
@@ -579,7 +543,7 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
         entry.bufferSize = rawData.rawSize;
         wr.WriteBuffer(reinterpret_cast<char *>(rawData.data), rawData.rawSize);
       } else if (settings.rgType == RGType::BC5) {
-        hdr.flags += TEXFlags::Compressed;
+        hdr.flags += TEXFlag::Compressed;
         hdr.internalFormat = GL_COMPRESSED_RG_RGTC2;
         entry.bufferSize = rawData.bcSize * 16;
         std::string buffer;
@@ -587,7 +551,7 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
         CompressBlocksBC5(&surf, reinterpret_cast<uint8_t *>(buffer.data()));
         wr.WriteContainer(buffer);
       } else if (settings.rgType == RGType::BC7) {
-        hdr.flags += TEXFlags::Compressed;
+        hdr.flags += TEXFlag::Compressed;
         hdr.internalFormat = GL_COMPRESSED_RGBA_BPTC_UNORM;
         entry.bufferSize = rawData.bcSize * 16;
         std::string buffer;
@@ -606,7 +570,7 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
         entry.bufferSize = rawData.rawSize;
         wr.WriteBuffer(reinterpret_cast<char *>(rawData.data), rawData.rawSize);
       } else if (settings.monochromeType == MonochromeType::BC4) {
-        hdr.flags += TEXFlags::Compressed;
+        hdr.flags += TEXFlag::Compressed;
         hdr.internalFormat = GL_COMPRESSED_RED_RGTC1;
         entry.bufferSize = rawData.bcSize * 8;
         std::string buffer;
@@ -614,7 +578,7 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
         CompressBlocksBC5(&surf, reinterpret_cast<uint8_t *>(buffer.data()));
         wr.WriteContainer(buffer);
       } else if (settings.monochromeType == MonochromeType::BC7) {
-        hdr.flags += TEXFlags::Compressed;
+        hdr.flags += TEXFlag::Compressed;
         hdr.internalFormat = GL_COMPRESSED_RGBA_BPTC_UNORM;
         entry.bufferSize = rawData.bcSize * 16;
         std::string buffer;
@@ -636,7 +600,8 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
     surf.width = rawData.width;
     surf.stride = rawData.width * rawData.numChannels;
     surf.ptr = static_cast<uint8_t *>(rawData.data);
-    hdr.flags += TEXFlags::NormalDeriveZAxis;
+    hdr.flags += TEXFlag::NormalDeriveZAxis;
+    hdr.flags += TEXFlag::NormalMap;
 
     TEXEntry entry;
     entry.target = currentTarget;
@@ -644,8 +609,8 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
     entry.bufferOffset = wr.Tell();
 
     if (settings.normalType == NormalType::BC3) {
-      hdr.flags += TEXFlags::Compressed;
-      hdr.flags += TEXFlags::Swizzle;
+      hdr.flags += TEXFlag::Compressed;
+      hdr.flags += TEXFlag::Swizzle;
       uint32 swMask[]{GL_RED, GL_ALPHA, GL_ONE, GL_ONE};
       memcpy(hdr.swizzleMask, swMask, sizeof(swMask));
       hdr.internalFormat = GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
@@ -686,8 +651,8 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
       free(rData);
       wr.WriteContainer(buffer);
     } else if (settings.normalType == NormalType::BC7) {
-      hdr.flags += TEXFlags::Compressed;
-      hdr.flags -= TEXFlags::NormalDeriveZAxis;
+      hdr.flags += TEXFlag::Compressed;
+      hdr.flags -= TEXFlag::NormalDeriveZAxis;
       hdr.internalFormat = GL_COMPRESSED_RGBA_BPTC_UNORM;
       entry.bufferSize = rawData.bcSize * 16;
       std::string buffer;
@@ -698,7 +663,7 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
                         &prof);
       wr.WriteContainer(buffer);
     } else if (settings.normalType == NormalType::BC5) {
-      hdr.flags += TEXFlags::Compressed;
+      hdr.flags += TEXFlag::Compressed;
       hdr.internalFormat = GL_COMPRESSED_RG_RGTC2;
       entry.bufferSize = rawData.bcSize * 16;
       std::string buffer;
@@ -706,9 +671,9 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
       CompressBlocksBC5(&surf, reinterpret_cast<uint8_t *>(buffer.data()));
       wr.WriteContainer(buffer);
     } else if (settings.normalType == NormalType::BC5S) {
-      hdr.flags += TEXFlags::Compressed;
+      hdr.flags += TEXFlag::Compressed;
       hdr.internalFormat = GL_COMPRESSED_SIGNED_RG_RGTC2;
-      hdr.flags += TEXFlags::SignedNormal;
+      hdr.flags += TEXFlag::SignedNormal;
       entry.bufferSize = rawData.bcSize * 16;
       std::string buffer;
       buffer.resize(entry.bufferSize);
@@ -724,7 +689,7 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
       } else if (settings.normalType == NormalType::RGS) {
         hdr.type = GL_BYTE;
         hdr.internalFormat = GL_RG8_SNORM;
-        hdr.flags += TEXFlags::SignedNormal;
+        hdr.flags += TEXFlag::SignedNormal;
 
         // Convert to signed space
         const size_t stride = 4;
