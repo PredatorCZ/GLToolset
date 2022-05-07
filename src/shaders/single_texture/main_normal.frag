@@ -1,3 +1,5 @@
+#include "main.h.glsl"
+
 out vec4 fragColor;
 in vec2 psTexCoord;
 

@@ -1,8 +1,4 @@
-// Defines
-// NUM_LIGHTS: Maximum used lights
-
-#if NUM_LIGHTS > 0
-
+#include "light_omni.h.glsl"
 
 #ifdef VS_INSTANCED
 in vec3 lightPos[maxNumLights];
@@ -20,4 +16,3 @@ void ComputeLights(vec3 modelSpace) {
         outLights.spotLightDir[l] = TransformTSNormal(spotLightDir[l]);
     }
 }
-#endif

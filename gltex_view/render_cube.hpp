@@ -1,74 +1,29 @@
-#include "shader_compiler.hpp"
-#include "shaders/shader_classes.hpp"
-
-uint32 CompileShader(uint32 type, const char *const data) {
-  return CompileShader(type, &data, 1);
-}
+#include "graphics/pipeline.hpp"
+#include "shader_classes.hpp"
+#include "utils/shader_preprocessor.hpp"
 
 struct MainShaderProgram {
   static constexpr size_t NUM_LIGHTS = 1;
-  static inline uint32 PROGRAMID = 0;
-  static inline uint64 PROGRAMHASH = 0;
-  static inline BaseShaderLocations locations;
   static inline uint32 LUB;
   static inline uint32 LDUB;
-  static inline uint32 FPUB;
 
   static inline prime::shaders::ubLightData<NUM_LIGHTS> lightData{
       prime::shaders::PointLight{{1.f, 1.f, 1.f}, true, {1.f, 0.05f, 0.025f}},
       {}};
   prime::shaders::ubLights<NUM_LIGHTS> lights{};
-  prime::shaders::single_texture::ubFragmentProperties fragProps{
-      {0.7, 0.7, 0.7}, 1.5, 32.f};
 
-  MainShaderProgram(TEXFlags flags) {
-    if (flags[TEXFlag::NormalMap]) {
-      fragProps.ambientColor = {};
+  MainShaderProgram(prime::graphics::TextureFlags flags,
+                    prime::graphics::Pipeline &pipeline) {
+    if (flags[prime::graphics::TextureFlag::NormalMap]) {
       lightData.pointLight[0].color = glm::vec3{0.7f};
     }
 
-    if (PROGRAMID) {
-      return;
-    }
+    auto &locations = pipeline.locations;
 
-    VertexShaderFeatures vsFeats;
-    vsFeats.tangentSpace = VSTSFeat::Quat;
-    vsFeats.numLights = NUM_LIGHTS;
-    // vsFeats.useInstances = true;
-
-    ShaderObject vsh =
-        CompileShaderObject(vsFeats, "shaders/single_texture/main.vert");
-
-    FragmentShaderFeatures fsFeats;
-    fsFeats.signedNormal = flags == TEXFlag::SignedNormal;
-    fsFeats.deriveZNormal = flags == TEXFlag::NormalDeriveZAxis;
-    fsFeats.numLights = NUM_LIGHTS;
-
-    ShaderObject fsh = CompileShaderObject(
-        fsFeats, flags == TEXFlag::NormalMap
-                     ? "shaders/single_texture/main_normal.frag"
-                     : "shaders/single_texture/main_albedo.frag");
-
-    PROGRAMID = glCreateProgram();
-    glAttachShader(PROGRAMID, vsh.objectId);
-    glAttachShader(PROGRAMID, fsh.objectId);
-    glLinkProgram(PROGRAMID);
-    glDeleteShader(vsh.objectId);
-    glDeleteShader(fsh.objectId);
-
-    PROGRAMHASH = vsh.objectHash | (uint64(fsh.objectHash) << 32);
-
-    locations = IntrospectShader(PROGRAMID);
-
-    glUniformBlockBinding(PROGRAMID, locations.ubPosition,
-                          locations.ubPosition);
-    glUniformBlockBinding(PROGRAMID, locations.ubLights, locations.ubLights);
-    glUniformBlockBinding(PROGRAMID, locations.ubFragmentProperties,
-                          locations.ubFragmentProperties);
-    glUniformBlockBinding(PROGRAMID, locations.ubLightData,
+    glUniformBlockBinding(pipeline.program, locations.ubLights,
+                          locations.ubLights);
+    glUniformBlockBinding(pipeline.program, locations.ubLightData,
                           locations.ubLightData);
-    glUniformBlockBinding(PROGRAMID, locations.ubInstanceTransforms,
-                          locations.ubInstanceTransforms);
 
     glGenBuffers(1, &LUB);
     glBindBuffer(GL_UNIFORM_BUFFER, LUB);
@@ -80,50 +35,27 @@ struct MainShaderProgram {
     glBufferData(GL_UNIFORM_BUFFER, sizeof(lightData), &lightData,
                  GL_DYNAMIC_DRAW);
     glBindBufferBase(GL_UNIFORM_BUFFER, locations.ubLightData, LDUB);
-
-    glGenBuffers(1, &FPUB);
-    glBindBuffer(GL_UNIFORM_BUFFER, FPUB);
-    glBufferData(GL_UNIFORM_BUFFER, sizeof(fragProps), &fragProps,
-                 GL_DYNAMIC_DRAW);
-    glBindBufferBase(GL_UNIFORM_BUFFER, locations.ubFragmentProperties, FPUB);
   }
 
   void UseProgram() {
-    glUseProgram(PROGRAMID);
     glBindBuffer(GL_UNIFORM_BUFFER, LUB);
     glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(lights), &lights);
     glBindBuffer(GL_UNIFORM_BUFFER, LDUB);
     glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(lightData), &lightData);
-    glBindBuffer(GL_UNIFORM_BUFFER, FPUB);
-    glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(fragProps), &fragProps);
-  }
-};
-
-struct RenderObject {
-  static inline uint32 UBID = 0;
-  static inline prime::shaders::ubPosition vsPosition;
-
-  RenderObject() {
-    if (UBID) {
-      return;
-    }
-
-    glGenBuffers(1, &UBID);
-    glBindBuffer(GL_UNIFORM_BUFFER, UBID);
-    glBufferData(GL_UNIFORM_BUFFER, sizeof(vsPosition), &vsPosition,
-                 GL_STREAM_DRAW);
   }
 };
 
 #include "mikktspace.h"
 
-struct CubeObject : RenderObject, MainShaderProgram {
+struct CubeObject : MainShaderProgram {
   static inline uint32 VAOID = 0;
   static inline uint32 ITID = 0;
   prime::shaders::InstanceTransforms<1, 1> transforms{
-      {{0.f, 0.f, 1.f, 1.f}}, {glm::quat{1, 0, 0, 0}}, {{1.f, 0.5f, 1.f}}};
+      {{0.f, 0.f, 1.f, 1.f}}, {glm::quat{1, 0, 0, 0}}, {{1.f, 1.f, 1.f}}};
 
-  CubeObject(TEXFlags flags) : MainShaderProgram(flags) {
+  CubeObject(prime::graphics::TextureFlags flags,
+             prime::graphics::Pipeline &pipeline)
+      : MainShaderProgram(flags, pipeline) {
     if (VAOID) {
       return;
     }
@@ -252,6 +184,8 @@ struct CubeObject : RenderObject, MainShaderProgram {
     glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
     glBufferData(GL_ARRAY_BUFFER, sizeof(boxVerts), boxVerts, GL_STATIC_DRAW);
 
+    auto &locations = pipeline.locations;
+
     glVertexAttribPointer(locations.inPos, 3, GL_BYTE, GL_FALSE, 12, (void *)0);
     glVertexAttribPointer(locations.inTexCoord20, 2, GL_BYTE, GL_FALSE, 12,
                           (void *)3);
@@ -271,21 +205,18 @@ struct CubeObject : RenderObject, MainShaderProgram {
                           (void *)0);
     glEnableVertexAttribArray(locations.inQTangent);
 
-    glBindBufferBase(GL_UNIFORM_BUFFER, locations.ubPosition, UBID);
-
     glGenBuffers(1, &ITID);
     glBindBuffer(GL_UNIFORM_BUFFER, ITID);
     glBufferData(GL_UNIFORM_BUFFER, sizeof(transforms), &transforms,
                  GL_STREAM_DRAW);
     glBindBufferBase(GL_UNIFORM_BUFFER, locations.ubInstanceTransforms, ITID);
+    glUniformBlockBinding(pipeline.program, locations.ubInstanceTransforms,
+                          locations.ubInstanceTransforms);
   }
 
   void Render() {
-    lights.viewPos = glm::vec3{} * vsPosition.view;
     UseProgram();
     glBindVertexArray(VAOID);
-    glBindBuffer(GL_UNIFORM_BUFFER, UBID);
-    glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(vsPosition), &vsPosition);
     glDrawArrays(GL_TRIANGLES, 0, 36);
   }
 };

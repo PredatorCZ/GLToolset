@@ -1,81 +1,11 @@
 
-struct BoxShaderProgram {
-  static inline uint32 PROGRAMID = 0;
-  static inline uint32 vsPositionLoc;
-  static inline uint32 localPosLoc;
-  static inline uint32 lightColorLoc;
-
-  glm::vec3 localPos{};
-
-  BoxShaderProgram() {
-    if (PROGRAMID) {
-      return;
-    }
-
-    static const char *const vertexShader = R"glsl(
-        #version 330 core
-        layout (location = 0) in vec2 inPos;
-        layout (location = 1) in vec2 inTex;
-
-        out vec2 TexCoord;
-
-        uniform VSPosition {
-          mat4 projection;
-          vec4 view[2];
-        };
-        uniform vec3 localPos;
-
-        vec3 transformDQ(vec4 dq[2], vec3 point) {
-          vec3 real = dq[0].yzw;
-          vec3 dual = dq[1].yzw;
-          vec3 crs0 = cross(real, cross(real, point) + point * dq[0].x + dual);
-          vec3 crs1 = (crs0 + dual * dq[0].x - real * dq[1].x) * 2 + point;
-          return crs1;
-        }
-
-        void main()
-        {
-          gl_Position = projection * (vec4(transformDQ(view, localPos), 1.0) + vec4(inPos, 0, 0) * 0.1);
-          TexCoord = inTex;
-        }
-    )glsl";
-
-    uint32 vshId = CompileShader(GL_VERTEX_SHADER, vertexShader);
-
-    static const char fragmentShader[] = R"glsl(
-        #version 330 core
-        out vec4 FragColor;
-        in vec2 TexCoord;
-        uniform sampler2D texture0;
-        uniform vec3 lightColor;
-
-        void main()
-        {
-          vec4 color = texture(texture0, TexCoord);
-          FragColor = vec4(color.r * lightColor, color.r);
-        }
-    )glsl";
-
-    uint32 pshId = CompileShader(GL_FRAGMENT_SHADER, fragmentShader);
-
-    PROGRAMID = glCreateProgram();
-    glAttachShader(PROGRAMID, vshId);
-    glAttachShader(PROGRAMID, pshId);
-    glLinkProgram(PROGRAMID);
-    glDeleteShader(vshId);
-    glDeleteShader(pshId);
-
-    localPosLoc = glGetUniformLocation(PROGRAMID, "localPos");
-    vsPositionLoc = glGetUniformBlockIndex(PROGRAMID, "VSPosition");
-    lightColorLoc = glGetUniformLocation(PROGRAMID, "lightColor");
-    glUniformBlockBinding(PROGRAMID, vsPositionLoc, MainShaderProgram::locations.ubPosition);
-  }
-};
-
-struct BoxObject : RenderObject, BoxShaderProgram {
+struct BoxObject {
   static inline uint32 VAOID = 0;
+  static inline uint32 localPosLoc = 0;
+  static inline uint32 lightColorLoc = 0;
+  glm::vec3 localPos;
 
-  BoxObject() {
+  BoxObject(prime::graphics::Pipeline &pipeline) {
     if (VAOID) {
       return;
     }
@@ -101,13 +31,16 @@ struct BoxObject : RenderObject, BoxShaderProgram {
 
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
+
+    localPosLoc = glGetUniformLocation(pipeline.program, "localPos");
+    lightColorLoc = glGetUniformLocation(pipeline.program, "lightColor");
   }
 
   void Render() {
-    glUseProgram(PROGRAMID);
     glBindVertexArray(VAOID);
     glUniform3fv(localPosLoc, 1, reinterpret_cast<float *>(&localPos));
-    glUniform3fv(lightColorLoc, 1, &MainShaderProgram::lightData.pointLight[0].color.x);
+    glUniform3fv(lightColorLoc, 1,
+                 &MainShaderProgram::lightData.pointLight[0].color.x);
     glDrawArrays(GL_TRIANGLES, 0, 6);
   }
 };

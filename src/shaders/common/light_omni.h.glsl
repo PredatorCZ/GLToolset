@@ -1,6 +1,7 @@
 
 #ifdef SHADER
 const int maxNumLights = NUM_LIGHTS;
+#include "defs.glsl"
 #endif
 
 #ifdef FRAGMENT
@@ -28,7 +29,7 @@ uniform ubLightData {
 #endif
 
 #ifdef VERTEX
-#define ILIGHTS outLights;
+#define ILIGHTS outLights
 
 CPPATTR(template <size_t maxNumLights>)
 uniform ubLights {

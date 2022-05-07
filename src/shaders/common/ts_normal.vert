@@ -9,6 +9,7 @@ in vec3 inNormal;
 
 #ifdef TS_QUAT
 in vec4 inQTangent;
+#include "quat.glsl"
 #elif defined(TS_MATRIX)
 in vec4 inTangent;
 mat3 tsTransform;

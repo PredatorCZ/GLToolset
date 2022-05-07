@@ -6,6 +6,9 @@
 // VS_NUMUVS2: Num used vec2 texcoords
 // VS_NUMUVS4: Num used vec4 texcoords
 
+#include "common.h.glsl"
+#include "dual_quat.glsl"
+
 in VS_POSTYPE inPos;
 #if VS_NUMUVS2 > 0
 in vec2 inTexCoord2[maxNumUVs2];

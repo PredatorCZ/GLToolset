@@ -1,7 +1,4 @@
-// Defines
-// NUM_LIGHTS: Maximum used lights
-
-#if NUM_LIGHTS > 0
+#include "light_omni.h.glsl"
 
 vec3 diffuse = vec3(0.f);
 vec3 specular = vec3(0.f);
@@ -57,5 +54,3 @@ void ComputeLights(vec3 normal, float specLevel, float specPower) {
         }
     }
 }
-
-#endif
