@@ -42,6 +42,7 @@ build_target(
   src/utils/shader_preprocessor.cpp
   src/graphics/pipeline.cpp
   src/common/camera.cpp
+  src/common/registry.cpp
   LINKS
   precore
   simplecpp)

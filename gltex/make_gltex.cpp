@@ -23,11 +23,11 @@
 #include "datas/master_printer.hpp"
 #include "datas/reflector.hpp"
 #include "datas/vectors_simd.hpp"
+#include "graphics/texture.hpp"
 #include "ispc_texcomp.h"
 #include "project.h"
 #include "stb_image.h"
 #include "stb_image_resize.h"
-#include "graphics/texture.hpp"
 #include <GL/gl.h>
 #include <GL/glext.h>
 
@@ -60,6 +60,8 @@ MAKE_ENUM(ENUMSCOPE(class NormalType
           EMEMBER(BC5S, "signed values"), EMEMBER(BC7),
           EMEMBER(RG, "8bit unsigned"), EMEMBER(RGS, "8bit signed"));
 
+constexpr size_t NUM_STREAMS = 4;
+
 struct GLTEX : ReflectorBase<GLTEX> {
   RGBAType rgbaType = RGBAType::BC3;
   RGBType rgbType = RGBType::BC1;
@@ -67,25 +69,30 @@ struct GLTEX : ReflectorBase<GLTEX> {
   MonochromeType monochromeType = MonochromeType::BC4;
   NormalType normalType = NormalType::BC5S;
   std::string normalMapPatterns;
+  int32 streamLimit[NUM_STREAMS]{128, 2048, 4096, -1};
   PathFilter normalExts;
 } settings;
 
-REFLECT(CLASS(GLTEX),
-        MEMBERNAME(rgbaType, "rgba-type", "4",
-                   ReflDesc{"Set output format for RGBA."}),
-        MEMBERNAME(rgbType, "rgb-type", "3",
-                   ReflDesc{"Set output format for RGB."}),
-        MEMBERNAME(rgType, "rg-type", "2",
-                   ReflDesc{
-                       "Set output format for RG (aka greyscale with alpha)."}),
-        MEMBERNAME(monochromeType, "monochrome-type", "1",
-                   ReflDesc{"Set output format for greyscale."}),
-        MEMBERNAME(normalType, "normal-type", "n",
-                   ReflDesc{"Set output format for normal maps. Z axis (B "
-                            "channel) and Alpha are ommitted."}),
-        MEMBERNAME(normalMapPatterns, "normalmap-patterns", "p",
-                   ReflDesc{"Specify filename patterns for detecting normal "
-                            "maps separated by comma."}), )
+REFLECT(
+    CLASS(GLTEX),
+    MEMBERNAME(rgbaType, "rgba-type", "4",
+               ReflDesc{"Set output format for RGBA."}),
+    MEMBERNAME(rgbType, "rgb-type", "3",
+               ReflDesc{"Set output format for RGB."}),
+    MEMBERNAME(rgType, "rg-type", "2",
+               ReflDesc{
+                   "Set output format for RG (aka greyscale with alpha)."}),
+    MEMBERNAME(monochromeType, "monochrome-type", "1",
+               ReflDesc{"Set output format for greyscale."}),
+    MEMBERNAME(normalType, "normal-type", "n",
+               ReflDesc{"Set output format for normal maps. Z axis (B "
+                        "channel) and Alpha are ommitted."}),
+    MEMBERNAME(normalMapPatterns, "normalmap-patterns", "p",
+               ReflDesc{"Specify filename patterns for detecting normal "
+                        "maps separated by comma."}),
+    MEMBERNAME(streamLimit, "stream-limit",
+               ReflDesc{
+                   "Exclusive pixel limit per stream. Must be power of 2."}), )
 
 static AppInfo_s appInfo{
     AppInfo_s::CONTEXT_VERSION,
@@ -329,7 +336,8 @@ RawImageData GetImageData(BinReaderRef rd, bool isNormalMap) {
       char *destData = nData + (p * desiredChannels);
       memcpy(destData, data + (p * channels), desiredChannels);
       if (isNormalMap) {
-        reinterpret_cast<uint8 &>(destData[1]) = 0xff - reinterpret_cast<uint8 &>(destData[1]);
+        reinterpret_cast<uint8 &>(destData[1]) =
+            0xff - reinterpret_cast<uint8 &>(destData[1]);
       }
     }
 
@@ -454,8 +462,30 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
 
   using namespace prime::graphics;
 
-  auto outFile = fleInfo.GetFullPathNoExt().to_string() + ".gtb";
-  BinWritter wr(outFile);
+  auto outFile = fleInfo.GetFullPathNoExt().to_string();
+  char indexExt[] = ".gtbx";
+  size_t currentStream = NUM_STREAMS;
+  size_t maxUsedStream = 0;
+  BinWritter wr;
+
+  auto UpdateStream = [&] {
+    const size_t minPixel = std::min(rawData.width, rawData.height);
+
+    for (size_t i = 0; i < NUM_STREAMS; i++) {
+      if (minPixel < settings.streamLimit[i]) {
+        if (currentStream != i) {
+          currentStream = i;
+          maxUsedStream = std::max(maxUsedStream, i);
+          indexExt[sizeof(indexExt) - 2] = '0' + i;
+          BinWritter newWr(outFile + indexExt);
+          std::swap(newWr, wr);
+        }
+
+        break;
+      }
+    }
+  };
+
   std::vector<TextureEntry> entries;
   uint16 currentTarget = GL_TEXTURE_2D;
   // -1 because we want minimum 4x4 mip
@@ -469,15 +499,17 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
   hdr.maxLevel = std::max(numMips - 1, 0);
 
   auto WriteTile = [&](uint32 level) {
+    UpdateStream();
     rgba_surface surf;
     surf.height = rawData.height;
     surf.width = rawData.width;
     surf.stride = rawData.width * 4;
     surf.ptr = static_cast<uint8_t *>(rawData.data);
 
-    TextureEntry entry;
+    TextureEntry entry{};
     entry.target = currentTarget;
     entry.level = level;
+    entry.streamIndex = currentStream;
     entry.bufferOffset = wr.Tell();
 
     if (rawData.origChannels == STBI_rgb_alpha) {
@@ -596,6 +628,7 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
   };
 
   auto WriteTileNormal = [&](uint32 level) {
+    UpdateStream();
     rgba_surface surf;
     surf.height = rawData.height;
     surf.width = rawData.width;
@@ -604,9 +637,10 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
     hdr.flags += TextureFlag::NormalDeriveZAxis;
     hdr.flags += TextureFlag::NormalMap;
 
-    TextureEntry entry;
+    TextureEntry entry{};
     entry.target = currentTarget;
     entry.level = level;
+    entry.streamIndex = currentStream;
     entry.bufferOffset = wr.Tell();
 
     if (settings.normalType == NormalType::BC3) {
@@ -737,8 +771,19 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
     free(rawData.data);
   }
 
+  std::sort(entries.begin(), entries.end(),
+            [](const prime::graphics::TextureEntry &i1,
+               const prime::graphics::TextureEntry &i2) {
+              if (i1.streamIndex == i2.streamIndex) {
+                return i1.level > i2.level;
+              }
+
+              return i1.streamIndex < i2.streamIndex;
+            });
+
   hdr.entries.pointer = sizeof(Texture);
   hdr.entries.numItems = entries.size();
+  hdr.numStreams = maxUsedStream + 1;
   outFile = fleInfo.GetFullPathNoExt().to_string() + ".gth";
   BinWritter wrh(outFile);
   wrh.Write(hdr);

@@ -1,6 +1,5 @@
 #include "utils/shader_preprocessor.hpp"
 #include "datas/except.hpp"
-#include "datas/jenkinshash3.hpp"
 #include "datas/master_printer.hpp"
 #include "simplecpp.h"
 #include <fstream>
@@ -168,7 +167,7 @@ common::ResourceData PreprocessShaderSource(VertexShaderFeatures features,
 
   dui.includes.emplace_back(SHADERS_SOURCE_DIR + "common/common.vert");
 
-  return {objectHash, PreProcess(path, dui)};
+  return {common::MakeHash<char>(objectHash), PreProcess(path, dui)};
 }
 
 common::ResourceData PreprocessShaderSource(FragmentShaderFeatures features,
@@ -199,7 +198,7 @@ common::ResourceData PreprocessShaderSource(FragmentShaderFeatures features,
 
   dui.includes.emplace_back(SHADERS_SOURCE_DIR + "common/ts_normal.frag");
 
-  return {objectHash, PreProcess(path, dui)};
+  return {common::MakeHash<char>(objectHash), PreProcess(path, dui)};
 }
 
 void SetShadersSourceDir(const std::string &path) { SHADERS_SOURCE_DIR = path; }

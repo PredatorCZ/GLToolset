@@ -32,3 +32,11 @@ void SetDefaultAnisotropy(uint32 newValue);
 uint32 LookupSampler(uint32 hash);
 
 }; // namespace prime::graphics
+
+HASH_CLASS(prime::graphics::Sampler);
+
+template <>
+constexpr std::string_view
+prime::common::GetClassExtension<prime::graphics::Sampler>() {
+  return "spl";
+}

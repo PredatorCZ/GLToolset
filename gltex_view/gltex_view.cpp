@@ -40,73 +40,63 @@
 
 #include "simplecpp.h"
 
-std::pair<prime::graphics::TextureUnit, prime::graphics::Texture>
-MakeTexture(std::string path) {
-  using namespace prime::common;
-  auto hdrData = LoadResource(path + ".gth");
-  auto texelData = LoadResource(path + ".gtb");
-  auto &hdr = *hdrData.As<prime::graphics::Texture>();
-  prime::utils::FixupClass(hdr);
-  auto unit =
-      prime::graphics::AddTexture(hdrData.hash, hdr, texelData.buffer.data());
-
-  return {unit, hdr};
-}
+namespace pc = prime::common;
+namespace pu = prime::utils;
+namespace pg = prime::graphics;
 
 void PrecompileShaders() {
-  prime::utils::SetShadersSourceDir(
-      "/home/lukas/github/gltoolset/src/shaders/");
+  pu::SetShadersSourceDir("/home/lukas/github/gltoolset/src/shaders/");
 
   simplecpp::DUI noDui{};
-  auto vertexShader = prime::utils::PreProcess("light/main.vert", noDui);
-  prime::common::AddSimpleResource({JenkinsHash3_("light/main.vert"), std::move(vertexShader)});
-  auto fragmentShader = prime::utils::PreProcess("light/main.frag", noDui);
-  prime::common::AddSimpleResource({JenkinsHash3_("light/main.frag"), std::move(fragmentShader)});
+  auto vertexShader = pu::PreProcess("light/main.vert", noDui);
+  pc::AddSimpleResource(
+      {pc::MakeHash<char>("light/main.vert"), std::move(vertexShader)});
+  auto fragmentShader = pu::PreProcess("light/main.frag", noDui);
+  pc::AddSimpleResource(
+      {pc::MakeHash<char>("light/main.frag"), std::move(fragmentShader)});
 
-  prime::utils::FragmentShaderFeatures fragFeats{};
-  prime::common::AddSimpleResource(prime::utils::PreprocessShaderSource(
-      fragFeats, "single_texture/main_albedo.frag"));
-  prime::common::AddSimpleResource(prime::utils::PreprocessShaderSource(
-      fragFeats, "single_texture/main_normal.frag"));
+  pu::FragmentShaderFeatures fragFeats{};
+  pc::AddSimpleResource(
+      pu::PreprocessShaderSource(fragFeats, "single_texture/main_normal.frag"));
   fragFeats.deriveZNormal = false;
-  prime::common::AddSimpleResource(prime::utils::PreprocessShaderSource(
-      fragFeats, "single_texture/main_normal.frag"));
+  pc::AddSimpleResource(
+      pu::PreprocessShaderSource(fragFeats, "single_texture/main_normal.frag"));
   fragFeats.signedNormal = false;
-  prime::common::AddSimpleResource(prime::utils::PreprocessShaderSource(
-      fragFeats, "single_texture/main_normal.frag"));
+  pc::AddSimpleResource(
+      pu::PreprocessShaderSource(fragFeats, "single_texture/main_normal.frag"));
+  pc::AddSimpleResource(
+      pu::PreprocessShaderSource(fragFeats, "single_texture/main_albedo.frag"));
   fragFeats.deriveZNormal = true;
-  prime::common::AddSimpleResource(prime::utils::PreprocessShaderSource(
-      fragFeats, "single_texture/main_normal.frag"));
+  pc::AddSimpleResource(
+      pu::PreprocessShaderSource(fragFeats, "single_texture/main_normal.frag"));
 
-  prime::utils::VertexShaderFeatures vertFeats{};
-  vertFeats.tangentSpace = prime::utils::VSTSFeat::Quat;
-  prime::common::AddSimpleResource(prime::utils::PreprocessShaderSource(
-      vertFeats, "single_texture/main.vert"));
+  pu::VertexShaderFeatures vertFeats{};
+  vertFeats.tangentSpace = pu::VSTSFeat::Quat;
+  pc::AddSimpleResource(
+      pu::PreprocessShaderSource(vertFeats, "single_texture/main.vert"));
 }
 
-prime::common::ResourceData
-BuildPipeline(prime::graphics::TextureFlags texFlags) {
-  prime::utils::Builder<prime::graphics::Pipeline> pipeline;
+pc::ResourceData BuildPipeline(pg::TextureFlags texFlags,
+                               const std::string &path) {
+  pu::Builder<pg::Pipeline> pipeline;
   pipeline.SetArray(pipeline.Data().stageObjects, 2);
   auto stageArray = pipeline.ArrayData(pipeline.Data().stageObjects);
 
   auto &vertObj = stageArray[0];
   vertObj.stageType = GL_VERTEX_SHADER;
-  prime::utils::VertexShaderFeatures vertFeats{};
-  vertFeats.tangentSpace = prime::utils::VSTSFeat::Quat;
+  pu::VertexShaderFeatures vertFeats{};
+  vertFeats.tangentSpace = pu::VSTSFeat::Quat;
 
   vertObj.object = JenkinsHash3_("single_texture/main.vert", vertFeats.Seed());
 
-  prime::utils::FragmentShaderFeatures fragFeats{};
-  fragFeats.signedNormal =
-      texFlags == prime::graphics::TextureFlag::SignedNormal;
-  fragFeats.deriveZNormal =
-      texFlags == prime::graphics::TextureFlag::NormalDeriveZAxis;
+  pu::FragmentShaderFeatures fragFeats{};
+  fragFeats.signedNormal = texFlags == pg::TextureFlag::SignedNormal;
+  fragFeats.deriveZNormal = texFlags == pg::TextureFlag::NormalDeriveZAxis;
 
   auto &fragObj = stageArray[1];
   fragObj.stageType = GL_FRAGMENT_SHADER;
 
-  const bool isNormal = texFlags == prime::graphics::TextureFlag::NormalMap;
+  const bool isNormal = texFlags == pg::TextureFlag::NormalMap;
 
   if (isNormal) {
     fragObj.object =
@@ -119,21 +109,22 @@ BuildPipeline(prime::graphics::TextureFlags texFlags) {
   pipeline.SetArray(pipeline.Data().textureUnits, 1);
   auto textureArray = pipeline.ArrayData(pipeline.Data().textureUnits);
   auto &texture = textureArray[0];
-  texture.sampler = JenkinsHash3_("res/default.spl");
+  texture.sampler = JenkinsHash3_("res/default");
   texture.slotHash = JenkinsHash_(isNormal ? "smTSNormal" : "smAlbedo");
-  texture.texture = JenkinsHash3_("main_texture");
+  texture.texture = JenkinsHash3_(path);
 
   pipeline.SetArray(pipeline.Data().uniformBlocks, 1);
   auto uniformBlockArray = pipeline.ArrayData(pipeline.Data().uniformBlocks);
   auto &uniformBlock = uniformBlockArray[0];
-  uniformBlock.dataObject = JenkinsHash3_("main_uniform");
+  uniformBlock.dataObject =
+      pc::MakeHash<pg::UniformBlockData>("main_uniform").hash;
   uniformBlock.bufferObject = JenkinsHash_("ubFragmentProperties");
 
-  return {JenkinsHash3_("main.ppe"), std::move(pipeline.buffer)};
+  return {pc::MakeHash<pg::Pipeline>("main"), std::move(pipeline.buffer)};
 }
 
 void BuildLightPipeline() {
-  prime::utils::Builder<prime::graphics::Pipeline> pipeline;
+  pu::Builder<pg::Pipeline> pipeline;
   pipeline.SetArray(pipeline.Data().stageObjects, 2);
   auto stageArray = pipeline.ArrayData(pipeline.Data().stageObjects);
 
@@ -148,17 +139,19 @@ void BuildLightPipeline() {
   pipeline.SetArray(pipeline.Data().textureUnits, 1);
   auto textureArray = pipeline.ArrayData(pipeline.Data().textureUnits);
   auto &texture = textureArray[0];
-  texture.sampler = JenkinsHash3_("res/default.spl");
+  texture.sampler = JenkinsHash3_("res/default");
   texture.slotHash = JenkinsHash_("smTexture");
-  texture.texture = JenkinsHash3_("res/light.gth");
+  texture.texture = JenkinsHash3_("res/light");
 
-  BinWritter wr(prime::utils::ShadersSourceDir() + "../res/light.ppe");
+  BinWritter wr(pu::ShadersSourceDir() + "../../gltex_view/res/light.ppe");
   wr.WriteContainer(pipeline.buffer);
 }
 
 int main(int, char *argv[]) {
   es::print::AddPrinterFunction(es::Print);
-  AFileInfo finf(argv[0]);
+
+  glfwSetErrorCallback(
+      [](int type, const char *msg) { printerror('(' << type << ')' << msg); });
 
   glfwInit();
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -195,81 +188,91 @@ int main(int, char *argv[]) {
   int maxAniso;
   int anisotropy = 8;
   glGetIntegerv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &maxAniso);
-  prime::graphics::SetDefaultAnisotropy(anisotropy);
+  pg::SetDefaultAnisotropy(anisotropy);
+
+  pg::MinimumStreamIndexForDeferredLoading(-1);
 
   PrecompileShaders();
 
+  std::string argv1(argv[1]);
+
   auto [texture, textureHdr] = [&] {
-    auto hdrData = prime::common::LoadResource(std::string(argv[1]) + ".gth");
-    auto texelData = prime::common::LoadResource(std::string(argv[1]) + ".gtb");
-    auto &hdr = *hdrData.As<prime::graphics::Texture>();
-    prime::utils::FixupClass(hdr);
-    auto unit = prime::graphics::AddTexture(JenkinsHash3_("main_texture"), hdr,
-                                            texelData.buffer.data());
+    auto mainTexture = pc::AddSimpleResource<pg::Texture>(argv1);
+    auto hdrData = pc::LoadResource(mainTexture);
+    auto &hdr = *hdrData.As<pg::Texture>();
+    pu::FixupClass(hdr);
+
+    for (size_t s = 0; s < hdr.numStreams; s++) {
+      auto tex = pg::RedirectTexture({}, s);
+      pc::AddSimpleResource(argv1, tex.type);
+    }
+
+    auto unit =
+        pg::AddTexture(std::make_shared<pc::ResourceData>(std::move(hdrData)));
 
     return std::make_pair(unit, hdr);
   }();
 
-  prime::common::SetWorkingFolder(finf.GetFolder());
+  AFileInfo finf(argv[0]);
+  pc::SetWorkingFolder(finf.GetFolder());
 
   {
-    uint32 defaultSampler = prime::common::AddSimpleResource("res/default.spl");
-    auto &res = prime::common::LoadResource(defaultSampler);
-    auto *smpl = res.As<prime::graphics::Sampler>();
-    prime::utils::FixupClass(*smpl);
-    prime::graphics::AddSampler(defaultSampler, *smpl);
+    pc::ResourceHash defaultSampler =
+        pc::AddSimpleResource<pg::Sampler>("res/default");
+    auto &res = pc::LoadResource(defaultSampler);
+    auto *smpl = res.As<pg::Sampler>();
+    pu::FixupClass(*smpl);
+    pg::AddSampler(defaultSampler.name, *smpl);
   };
 
   auto [lightTexture, lightTextureHdr] = [&] {
-    uint32 hdrTex = prime::common::AddSimpleResource("res/light.gth");
-    uint32 texels = prime::common::AddSimpleResource("res/light.gtb");
-
-    auto hdrData = prime::common::LoadResource(hdrTex);
-    auto texelData = prime::common::LoadResource(texels);
-    auto &hdr = *hdrData.As<prime::graphics::Texture>();
-    prime::utils::FixupClass(hdr);
+    pc::ResourceHash hdrTex = pc::AddSimpleResource<pg::Texture>("res/light");
+    pc::AddSimpleResource<pg::TextureStream<0>>("res/light");
+    auto hdrData = pc::LoadResource(hdrTex);
+    auto &hdr = *hdrData.As<pg::Texture>();
+    pu::FixupClass(hdr);
     auto unit =
-        prime::graphics::AddTexture(hdrData.hash, hdr, texelData.buffer.data());
+        pg::AddTexture(std::make_shared<pc::ResourceData>(std::move(hdrData)));
 
     return std::make_pair(unit, hdr);
   }();
 
   using MainUBType = prime::shaders::single_texture::ubFragmentProperties;
   MainUBType *mainUBData = [&] {
-    prime::common::ResourceData mainUniform;
+    pc::ResourceData mainUniform;
     mainUniform.buffer.resize(sizeof(MainUBType));
-    mainUniform.hash = JenkinsHash3_("main_uniform");
-    prime::common::AddSimpleResource(std::move(mainUniform));
-    auto &res = prime::common::LoadResource(mainUniform.hash);
+    mainUniform.hash = pc::MakeHash<pg::UniformBlockData>("main_uniform");
+    pc::AddSimpleResource(std::move(mainUniform));
+    auto &res = pc::LoadResource(mainUniform.hash);
     return res.As<MainUBType>();
   }();
 
   *mainUBData = {{0.7, 0.7, 0.7}, 1.5, 32.f};
 
-  if (texture.flags == prime::graphics::TextureFlag::NormalMap) {
+  if (texture.flags == pg::TextureFlag::NormalMap) {
     mainUBData->ambientColor = {};
   }
 
   auto pipeline = [&, textureFlags = texture.flags] {
-    auto mainPipeline = BuildPipeline(textureFlags);
-    prime::common::AddSimpleResource(std::move(mainPipeline));
-    auto &pipelineData = prime::common::LoadResource(mainPipeline.hash);
-    auto pipeline = pipelineData.As<prime::graphics::Pipeline>();
-    prime::utils::FixupClass(*pipeline);
-    prime::graphics::AddPipeline(*pipeline);
+    auto mainPipeline = BuildPipeline(textureFlags, argv1);
+    pc::AddSimpleResource(std::move(mainPipeline));
+    auto &pipelineData = pc::LoadResource(mainPipeline.hash);
+    auto pipeline = pipelineData.As<pg::Pipeline>();
+    pu::FixupClass(*pipeline);
+    pg::AddPipeline(*pipeline);
     return pipeline;
   }();
+
+  // BuildLightPipeline();
 
   auto lightPipeline = [&] {
-    uint32 resHash = prime::common::AddSimpleResource("res/light.ppe");
-    auto &pipelineData = prime::common::LoadResource(resHash);
-    auto pipeline = pipelineData.As<prime::graphics::Pipeline>();
-    prime::utils::FixupClass(*pipeline);
-    prime::graphics::AddPipeline(*pipeline);
+    pc::ResourceHash resHash = pc::AddSimpleResource<pg::Pipeline>("res/light");
+    auto &pipelineData = pc::LoadResource(resHash);
+    auto pipeline = pipelineData.As<pg::Pipeline>();
+    pu::FixupClass(*pipeline);
+    pg::AddPipeline(*pipeline);
     return pipeline;
   }();
-
-  //BuildLightPipeline();
 
   auto infoText = [&, &textureHdr = textureHdr, &texture = texture] {
     char infoBuffer[0x100];
@@ -285,7 +288,7 @@ int main(int, char *argv[]) {
       return (const char *)nullptr;
     };
 
-    using TexFlag = prime::graphics::TextureFlag;
+    using TexFlag = pg::TextureFlag;
 
     auto typeStr =
         texture.flags[TexFlag::Compressed]
@@ -303,9 +306,8 @@ int main(int, char *argv[]) {
 
   CubeObject cubeObj(texture.flags, *pipeline);
 
-  uint32 cameraIndex =
-      prime::common::AddCamera(JenkinsHash3_("default_camera"), {});
-  auto &camera = prime::common::GetCamera(JenkinsHash3_("default_camera"));
+  uint32 cameraIndex = pc::AddCamera(JenkinsHash3_("default_camera"), {});
+  auto &camera = pc::GetCamera(JenkinsHash3_("default_camera"));
 
   float scale = 1;
   auto UpdateProjection = [&] {
@@ -315,11 +317,12 @@ int main(int, char *argv[]) {
 
   int maxLevel;
   glGetTextureParameteriv(texture.id, GL_TEXTURE_MAX_LEVEL, &maxLevel);
-  int lastLevel = 0;
+  int lastLevel;
+  glGetTextureParameteriv(texture.id, GL_TEXTURE_BASE_LEVEL, &lastLevel);
 
   glm::vec4 lightOrbit{1, 0, 0, 1.5};
 
-  prime::graphics::FrameBuffer frameBuffer(width, height);
+  pg::FrameBuffer frameBuffer(width, height);
 
   constexpr float radius = 5;
   glm::vec3 lookAtDirection{1, 0, 0};
@@ -346,6 +349,9 @@ int main(int, char *argv[]) {
   glEnable(GL_DEPTH_TEST);
   glDepthFunc(GL_LESS);
 
+  // std::thread streamer([&]{glfwMakeContextCurrent(window);
+  // pg::StreamTextures(0);});
+
   while (!glfwWindowShouldClose(window)) {
     cubeObj.lights.lightPos[0] = lightOrbit * lightOrbit.w;
     boxObj.localPos = cubeObj.lights.lightPos[0];
@@ -354,7 +360,7 @@ int main(int, char *argv[]) {
     glBindFramebuffer(GL_FRAMEBUFFER, frameBuffer.bufferId);
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    prime::common::SetCurrentCamera(cameraIndex);
+    pc::SetCurrentCamera(cameraIndex);
     pipeline->BeginRender();
     cubeObj.Render();
     glEnable(GL_BLEND);
@@ -516,7 +522,7 @@ int main(int, char *argv[]) {
       }
 
       if (ImGui::SliderInt("Anisotropy", &anisotropy, 1, maxAniso)) {
-        prime::graphics::SetDefaultAnisotropy(anisotropy);
+        pg::SetDefaultAnisotropy(anisotropy);
       }
     }
     ImGui::End();

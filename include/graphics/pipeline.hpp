@@ -85,5 +85,22 @@ struct Pipeline {
   void BeginRender() const;
 };
 
+struct UniformBlockData;
+
 void AddPipeline(Pipeline &pipeline);
 } // namespace prime::graphics
+
+HASH_CLASS(prime::graphics::Pipeline);
+HASH_CLASS(prime::graphics::UniformBlockData);
+
+template <>
+constexpr std::string_view
+prime::common::GetClassExtension<prime::graphics::Pipeline>() {
+  return "ppe";
+}
+
+template <>
+constexpr std::string_view
+prime::common::GetClassExtension<prime::graphics::UniformBlockData>() {
+  return "ubb";
+}

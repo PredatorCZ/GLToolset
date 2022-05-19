@@ -119,7 +119,7 @@ void AddPipeline(Pipeline &pipeline) {
         !es::IsEnd(shaderObjects, found)) {
       s.object = found->second;
     } else {
-      auto &res = common::LoadResource(objectHash);
+      auto &res = common::LoadResource(common::MakeHash<char>(objectHash));
       s.object = CompileShader(s.stageType, res.buffer.c_str());
       shaderObjects.emplace(objectHash, s.object);
     }
@@ -156,7 +156,7 @@ void AddPipeline(Pipeline &pipeline) {
   }
 
   for (auto &u : pipeline.uniformBlocks) {
-    auto &res = common::LoadResource(u.dataObject);
+    auto &res = common::LoadResource(common::ResourceHash{u.dataObject});
     u.dataObject = reinterpret_cast<uint64>(res.buffer.data());
     u.dataSize = res.buffer.size();
     JenHash bufferLocationHash(u.bufferObject);

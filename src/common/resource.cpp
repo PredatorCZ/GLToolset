@@ -1,22 +1,38 @@
 #include "common/resource.hpp"
 #include "datas/binreader.hpp"
-#include "datas/jenkinshash3.hpp"
+#include "datas/fileinfo.hpp"
+#include <map>
 
 namespace prime::common {
 static std::string workingDirectory;
 
 ResourceData LoadResource(const std::string &path) {
-  BinReader rd(workingDirectory + path);
+  AFileInfo fileInfo(path);
+  BinReader rd(path.front() == '/' ? path : workingDirectory + path);
   ResourceData data{};
-  data.hash = JenkinsHash3_(path);
+  data.hash.name = JenkinsHash3_(fileInfo.GetFullPathNoExt());
+  try {
+    auto ext = fileInfo.GetExtension();
+    ext.remove_prefix(1);
+    data.hash.type = GetClassFromExtension({ext.data(), ext.size()});
+  } catch (...) {
+  }
   rd.ReadContainer(data.buffer, rd.GetSize());
   return data;
 }
 
-static std::map<uint32, std::pair<std::string, ResourceData>> resources;
+static std::map<ResourceHash, std::pair<std::string, ResourceData>> resources;
 
-uint32 AddSimpleResource(const std::string &path, uint32 seed) {
-  const uint32 hash = JenkinsHash3_(path, seed);
+ResourceHash AddSimpleResource(std::string path, uint32 classHash) {
+  ResourceHash hash{};
+  hash.name = JenkinsHash3_(path);
+  hash.type = classHash;
+
+  if (auto ext = GetExtentionFromHash(classHash); !ext.empty()) {
+    path.push_back('.');
+    path.append(ext);
+  }
+
   resources.insert({hash, {path, {hash, {}}}});
   return hash;
 }
@@ -25,7 +41,7 @@ void AddSimpleResource(ResourceData &&resource) {
   resources.insert({resource.hash, {{}, std::move(resource)}});
 }
 
-ResourceData &LoadResource(uint32 hash) {
+ResourceData &LoadResource(ResourceHash hash) {
   auto &res = resources.at(hash);
   auto &[fileName, resource] = res;
 
