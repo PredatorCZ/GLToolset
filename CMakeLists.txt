@@ -38,6 +38,7 @@ build_target(
   SOURCES
   src/graphics/sampler.cpp
   src/graphics/texture.cpp
+  src/graphics/vertex.cpp
   src/common/resource.cpp
   src/utils/shader_preprocessor.cpp
   src/graphics/pipeline.cpp
@@ -52,3 +53,4 @@ target_include_directories(prime PUBLIC src/shaders)
 add_subdirectory(gltex_view)
 
 add_spike_subdir(gltex)
+add_spike_subdir(glmod)
