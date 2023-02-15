@@ -6,12 +6,27 @@
 #include "graphics/sampler.hpp"
 #include "graphics/texture.hpp"
 #include "shader_classes.hpp"
+#include "utils/shader_preprocessor.hpp"
 #include <GL/glew.h>
 
-static std::map<uint32, uint32> shaderObjects;
+using GLShaderObject = uint32;
+static std::map<uint32, GLShaderObject> shaderObjects;
 
-static uint32 CompileShader(uint32 type, const char *data) {
-  uint32 shaderId = glCreateShader(type);
+static void CompileShader(prime::graphics::StageObject &s,
+                          std::string_view defBuffer) {
+  std::string shaderSource =
+      prime::utils::PreprocessShader(s.object, s.stageType, defBuffer);
+  uint32 sourceHash = JenkinsHash_(shaderSource);
+
+  if (auto found = shaderObjects.find(sourceHash);
+      !es::IsEnd(shaderObjects, found)) {
+    s.object = found->second;
+    return;
+  }
+
+  auto data = shaderSource.c_str();
+
+  uint32 shaderId = glCreateShader(s.stageType);
   glShaderSource(shaderId, 1, &data, nullptr);
   glCompileShader(shaderId);
 
@@ -29,10 +44,11 @@ static uint32 CompileShader(uint32 type, const char *data) {
       source.resize(sourceLen);
       glGetShaderSource(shaderId, sourceLen, &sourceLen, source.data());
       printinfo(source);
+      throw;
     }
   }
 
-  return shaderId;
+  shaderObjects.emplace(sourceHash, s.object = shaderId);
 }
 
 struct ShaderLocations : prime::graphics::BaseProgramLocations {
@@ -40,15 +56,10 @@ struct ShaderLocations : prime::graphics::BaseProgramLocations {
 };
 
 REFLECT(CLASS(ShaderLocations), MEMBER(inPos), MEMBER(inTangent),
-        MEMBER(inQTangent), MEMBER(inNormal),
-        MEMBERNAME(inTexCoord20, "inTexCoord2[0]"),
-        MEMBERNAME(inTexCoord21, "inTexCoord2[1]"),
-        MEMBERNAME(inTexCoord22, "inTexCoord2[2]"),
-        MEMBERNAME(inTexCoord23, "inTexCoord2[3]"),
+        MEMBER(inNormal), MEMBERNAME(inTexCoord2, "inTexCoord2"),
         MEMBERNAME(inTexCoord40, "inTexCoord4[0]"),
         MEMBERNAME(inTexCoord41, "inTexCoord4[1]"),
-        MEMBERNAME(inTexCoord42, "inTexCoord4[2]"),
-        MEMBERNAME(inTexCoord43, "inTexCoord4[3]"), MEMBER(ubCamera),
+        MEMBERNAME(inTexCoord42, "inTexCoord4[2]"), MEMBER(ubCamera),
         MEMBER(ubLights), MEMBER(ubFragmentProperties), MEMBER(ubLightData),
         MEMBER(ubInstanceTransforms), MEMBER(inTransform))
 
@@ -71,14 +82,14 @@ ShaderLocations IntrospectShader(uint32 program) {
     glGetProgramResourceName(program, GL_PROGRAM_INPUT, attrib,
                              sizeof(nameData), NULL, nameData);
     auto location = glGetAttribLocation(program, nameData);
-    ref.SetReflectedValueUInt(JenHash(es::string_view(nameData)), location);
+    ref.SetReflectedValueUInt(JenHash(std::string_view(nameData)), location);
   }
 
   for (int ub = 0; ub < numActiveUniformBlocks; ub++) {
     glGetProgramResourceName(program, GL_UNIFORM_BLOCK, ub, sizeof(nameData),
                              NULL, nameData);
     auto location = glGetUniformBlockIndex(program, nameData);
-    ref.SetReflectedValueUInt(JenHash(es::string_view(nameData)), location);
+    ref.SetReflectedValueUInt(JenHash(std::string_view(nameData)), location);
   }
 
   std::map<uint32, uint32> textureSlots;
@@ -89,10 +100,10 @@ ShaderLocations IntrospectShader(uint32 program) {
 
     if (auto location = glGetUniformLocation(program, nameData);
         location != -1) {
-      if (es::string_view(nameData).begins_with("sm")) {
+      if (std::string_view(nameData).starts_with("sm")) {
         textureSlots.emplace(location, JenkinsHash_(nameData));
       } else {
-        //printf("%u %s\n", location, nameData);
+        // printf("%u %s\n", location, nameData);
       }
     }
   }
@@ -111,19 +122,11 @@ struct ReflectorFriend : Reflector {
 namespace prime::graphics {
 void AddPipeline(Pipeline &pipeline) {
   pipeline.program = glCreateProgram();
+  std::string_view defBuffer(pipeline.definitions.begin(),
+                             pipeline.definitions.end());
 
   for (auto &s : pipeline.stageObjects) {
-    uint32 objectHash = s.object;
-
-    if (auto found = shaderObjects.find(objectHash);
-        !es::IsEnd(shaderObjects, found)) {
-      s.object = found->second;
-    } else {
-      auto &res = common::LoadResource(common::MakeHash<char>(objectHash));
-      s.object = CompileShader(s.stageType, res.buffer.c_str());
-      shaderObjects.emplace(objectHash, s.object);
-    }
-
+    CompileShader(s, defBuffer);
     glAttachShader(pipeline.program, s.object);
   }
 
@@ -148,6 +151,9 @@ void AddPipeline(Pipeline &pipeline) {
       static_cast<ReflectorFriend &>(static_cast<Reflector &>(ref));
 
   for (auto &t : pipeline.textureUnits) {
+    if (!introData.textureSlots.contains(t.slotHash)) {
+      continue;
+    }
     t.sampler = LookupSampler(t.sampler);
     auto unit = LookupTexture(t.texture);
     t.texture = unit.id;
@@ -156,14 +162,17 @@ void AddPipeline(Pipeline &pipeline) {
   }
 
   for (auto &u : pipeline.uniformBlocks) {
-    auto &res = common::LoadResource(common::ResourceHash{u.dataObject});
-    u.dataObject = reinterpret_cast<uint64>(res.buffer.data());
-    u.dataSize = res.buffer.size();
+    common::LinkResource(u.data);
     JenHash bufferLocationHash(u.bufferObject);
+
+    if (u.dataSize == 0) {
+      u.dataSize = common::FindResource(u.data.resourcePtr).buffer.size();
+    }
+
     glGenBuffers(1, &u.bufferObject);
     glBindBuffer(GL_UNIFORM_BUFFER, u.bufferObject);
-    glBufferData(GL_UNIFORM_BUFFER, u.dataSize,
-                 reinterpret_cast<void *>(u.dataObject), GL_DYNAMIC_DRAW);
+    glBufferData(GL_UNIFORM_BUFFER, u.dataSize, u.data.resourcePtr,
+                 GL_DYNAMIC_DRAW);
 
     auto type = reff.GetReflectedType(bufferLocationHash);
 
@@ -171,7 +180,7 @@ void AddPipeline(Pipeline &pipeline) {
       auto rData = reinterpret_cast<char *>(&ref.data);
       uint32 location = *reinterpret_cast<uint32 *>(rData + type->offset);
       glUniformBlockBinding(pipeline.program, location, location);
-      glBindBufferBase(GL_UNIFORM_BUFFER, location, u.bufferObject);
+      u.location = location;
     } else {
       printerror("Cannot find unform block location "
                  << std::hex << bufferLocationHash.raw());
@@ -195,10 +204,21 @@ void Pipeline::BeginRender() const {
                    common::GetUBCamera());
 
   for (auto &u : uniformBlocks) {
+    glBindBufferBase(GL_UNIFORM_BUFFER, u.location, u.bufferObject);
     glBindBuffer(GL_UNIFORM_BUFFER, u.bufferObject);
-    glBufferSubData(GL_UNIFORM_BUFFER, 0, u.dataSize,
-                    reinterpret_cast<void *>(u.dataObject));
+    glBufferSubData(GL_UNIFORM_BUFFER, 0, u.dataSize, u.data.resourcePtr);
   }
 }
-
 } // namespace prime::graphics
+
+template <> class prime::common::InvokeGuard<prime::graphics::Pipeline> {
+  static inline const bool data =
+      prime::common::AddResourceHandle<prime::graphics::Pipeline>({
+          .Process =
+              [](ResourceData &data) {
+                auto hdr = data.As<prime::graphics::Pipeline>();
+                prime::graphics::AddPipeline(*hdr);
+              },
+          .Delete = nullptr,
+      });
+};

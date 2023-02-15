@@ -14,8 +14,7 @@ struct DeferredPayload {
 };
 
 static std::map<uint32, TextureUnit> TEXTURE_UNITS;
-static std::deque<std::function<void()>>
-    DEFERRED_LOADER_QUEUE[3];
+static std::deque<std::function<void()>> DEFERRED_LOADER_QUEUE[3];
 static uint32 MIN_DEFER_LEVEL = 1;
 static uint32 CLAMP_RES = 4096;
 
@@ -62,6 +61,69 @@ static void LoadBindedTextureLevels(DeferredPayload pl) {
           }
 
           minLevel = std::min(e.level, minLevel);
+        }
+      } else if (hdr.numDims == 2) {
+        for (auto &e : hdr.entries) {
+          uint32 height = hdr.height >> e.level;
+          uint32 width = hdr.width >> e.level;
+
+          if (std::max(height, width) >= CLAMP_RES ||
+              e.streamIndex != pl.streamIndex) {
+            continue;
+          }
+
+          minLevel = std::min(e.level, minLevel);
+        }
+      }
+    }
+  } else {
+    if (hdr.flags == TextureFlag::Volume) {
+      // not implemented
+    } else if (hdr.flags == TextureFlag::Array) {
+      // not implemented
+    } else {
+      if (hdr.numDims == 1) {
+        for (auto &e : hdr.entries) {
+          uint32 width = hdr.width >> e.level;
+
+          if (e.streamIndex != pl.streamIndex) {
+            continue;
+          }
+
+          minLevel = std::min(e.level, minLevel);
+        }
+      } else if (hdr.numDims == 2) {
+        for (auto &e : hdr.entries) {
+          uint32 height = hdr.height >> e.level;
+          uint32 width = hdr.width >> e.level;
+
+          if (std::max(height, width) >= CLAMP_RES ||
+              e.streamIndex != pl.streamIndex) {
+            continue;
+          }
+
+          minLevel = std::min(e.level, minLevel);
+        }
+      }
+    }
+  }
+
+  glTexParameteri(hdr.target, GL_TEXTURE_BASE_LEVEL, minLevel);
+  glTexParameteri(hdr.target, GL_TEXTURE_MAX_LEVEL, hdr.maxLevel);
+
+  if (hdr.flags == TextureFlag::Compressed) {
+    if (hdr.flags == TextureFlag::Volume) {
+      // not implemented
+    } else if (hdr.flags == TextureFlag::Array) {
+      // not implemented
+    } else {
+      if (hdr.numDims == 1) {
+        for (auto &e : hdr.entries) {
+          uint32 width = hdr.width >> e.level;
+
+          if (e.streamIndex != pl.streamIndex) {
+            continue;
+          }
 
           glCompressedTexImage1D(e.target, e.level, hdr.internalFormat, width,
                                  0, e.bufferSize,
@@ -76,8 +138,6 @@ static void LoadBindedTextureLevels(DeferredPayload pl) {
               e.streamIndex != pl.streamIndex) {
             continue;
           }
-
-          minLevel = std::min(e.level, minLevel);
 
           glCompressedTexImage2D(e.target, e.level, hdr.internalFormat, width,
                                  height, 0, e.bufferSize,
@@ -99,8 +159,6 @@ static void LoadBindedTextureLevels(DeferredPayload pl) {
             continue;
           }
 
-          minLevel = std::min(e.level, minLevel);
-
           glTexImage1D(e.target, e.level, hdr.internalFormat, width, 0,
                        hdr.format, hdr.type,
                        data.buffer.data() + e.bufferOffset);
@@ -115,8 +173,6 @@ static void LoadBindedTextureLevels(DeferredPayload pl) {
             continue;
           }
 
-          minLevel = std::min(e.level, minLevel);
-
           glTexImage2D(e.target, e.level, hdr.internalFormat, width, height, 0,
                        hdr.format, hdr.type,
                        data.buffer.data() + e.bufferOffset);
@@ -125,7 +181,7 @@ static void LoadBindedTextureLevels(DeferredPayload pl) {
     }
   }
 
-  glTexParameteri(hdr.target, GL_TEXTURE_BASE_LEVEL, minLevel);
+  glBindTexture(hdr.target, 0);
 };
 
 TextureUnit
@@ -137,14 +193,11 @@ prime::graphics::AddTexture(std::shared_ptr<prime::common::ResourceData> res) {
   unit.target = hdr.target;
   unit.flags = hdr.flags;
   TEXTURE_UNITS.insert({res->hash.name, unit});
-  glBindTexture(hdr.target, unit.id);
-  glTexParameteri(hdr.target, GL_TEXTURE_MAX_LEVEL, hdr.maxLevel);
+  LoadBindedTextureLevels({res, unit.id});
 
   if (hdr.flags == TextureFlag::Swizzle) {
     glTexParameteriv(hdr.target, GL_TEXTURE_SWIZZLE_RGBA, hdr.swizzleMask);
   }
-
-  LoadBindedTextureLevels({res, unit.id});
 
   for (uint32 i = 1; i < hdr.numStreams; i++) {
     if (i >= MIN_DEFER_LEVEL) {
@@ -171,7 +224,7 @@ void prime::graphics::MinimumStreamIndexForDeferredLoading(uint32 minId) {
 }
 
 void prime::graphics::StreamTextures(size_t streamIndex) {
-  while(!DEFERRED_LOADER_QUEUE[streamIndex].empty()) {
+  while (!DEFERRED_LOADER_QUEUE[streamIndex].empty()) {
     DEFERRED_LOADER_QUEUE[streamIndex].back()();
     DEFERRED_LOADER_QUEUE[streamIndex].pop_back();
   }

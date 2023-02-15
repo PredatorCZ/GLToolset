@@ -1,3 +1,5 @@
+#pragma once
+
 vec3 QTransformPoint(vec4 q, vec3 point) {
     vec3 qvec = q.yzw;
     vec3 uv = cross(qvec, point);

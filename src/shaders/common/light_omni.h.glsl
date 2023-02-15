@@ -1,15 +1,16 @@
+#pragma once
 
 #ifdef SHADER
-const int maxNumLights = NUM_LIGHTS;
 #include "defs.glsl"
+const int maxNumLights = NUM_LIGHTS;
 #endif
 
 #ifdef FRAGMENT
-#define ILIGHTS
+#define ILIGHTS inLights
 
 struct PointLight {
   vec3 color;
-  bool active;
+  bool isActive;
   vec3 attenuation;
 };
 

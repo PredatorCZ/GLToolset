@@ -1,4 +1,4 @@
-#include "main.h.glsl"
+#include "single_texture/main.h.glsl"
 
 out vec4 fragColor;
 in vec2 psTexCoord;

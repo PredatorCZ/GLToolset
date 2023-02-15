@@ -12,14 +12,14 @@ struct LightData {
 };
 
 LightData GetLight(vec3 position, vec3 normal, vec3 color, vec3 attenuation, float specPower, float specLevel) {
-    vec3 lightToFragDistance = position - fragPos;
+    vec3 lightToFragDistance = position - inLights.fragPos;
     float attenuationLen = length(lightToFragDistance);
     vec3 lightFragDir = lightToFragDistance / attenuationLen;
     float lightDot = max(dot(normal, lightFragDir), 0.0);
     float atten = 1.0 / (attenuation.x + attenuation.y * attenuationLen + attenuation.z * (attenuationLen * attenuationLen));
     vec3 diffColor = lightDot * color * atten;
 
-    vec3 viewDir = normalize(viewPos - fragPos);
+    vec3 viewDir = normalize(inLights.viewPos - inLights.fragPos);
     vec3 reflectDir = reflect(-lightFragDir, normal);
     float specDot = max(dot(viewDir, reflectDir), 0.0);
     float spec = pow(specDot, specPower);
@@ -32,8 +32,8 @@ void ComputeLights(vec3 normal, float specLevel, float specPower) {
     for(int l = 0; l < maxNumLights; l++) {
         PointLight curPointLight = pointLight[l];
 
-        if(curPointLight.active) {
-            LightData lightData = GetLight(lightPos[l], normal, curPointLight.color, curPointLight.attenuation, specPower, specLevel);
+        if(curPointLight.isActive) {
+            LightData lightData = GetLight(inLights.lightPos[l], normal, curPointLight.color, curPointLight.attenuation, specPower, specLevel);
             diffuse += lightData.color;
             specular += lightData.specColor;
         }
@@ -43,9 +43,9 @@ void ComputeLights(vec3 normal, float specLevel, float specPower) {
         SpotLight curSpotLight = spotLight[l];
 
         if(curSpotLight.cutOffBegin > 0.1f) {
-            LightData lightData = GetLight(spotLightPos[l], normal, curSpotLight.color, curSpotLight.attenuation, specPower, specLevel);
+            LightData lightData = GetLight(inLights.spotLightPos[l], normal, curSpotLight.color, curSpotLight.attenuation, specPower, specLevel);
 
-            float theta = dot(lightData.direction, spotLightDir[l]);
+            float theta = dot(lightData.direction, inLights.spotLightDir[l]);
             float epsilon = curSpotLight.cutOffEnd - curSpotLight.cutOffBegin;
             float intensity = clamp((theta - curSpotLight.cutOffBegin) / epsilon, 0.0, 1.0);
 

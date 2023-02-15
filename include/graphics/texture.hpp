@@ -6,7 +6,20 @@
 namespace prime::common {
 struct ResourceData;
 union ResourceHash;
-}
+} // namespace prime::common
+
+namespace prime::graphics {
+struct Texture;
+struct TextureEntry;
+template <uint32 streamId> struct TextureStream;
+} // namespace prime::graphics
+
+CLASS_EXT(prime::graphics::Texture);
+HASH_CLASS(prime::graphics::TextureEntry);
+CLASS_EXT(prime::graphics::TextureStream<0>);
+CLASS_EXT(prime::graphics::TextureStream<1>);
+CLASS_EXT(prime::graphics::TextureStream<2>);
+CLASS_EXT(prime::graphics::TextureStream<3>);
 
 namespace prime::graphics {
 enum TextureFlag : uint16 {
@@ -28,15 +41,12 @@ struct TextureEntry {
   uint32 bufferSize;
   uint64 bufferOffset;
 };
-} // namespace prime::graphics
 
-HASH_CLASS(prime::graphics::TextureEntry);
-
-namespace prime::graphics {
 using TextureFlags = es::Flags<TextureFlag>;
 
-struct Texture {
-  common::Array<TextureEntry> entries;
+struct Texture : common::Resource {
+  Texture() : CLASS_VERSION(1) {}
+  common::LocalArray32<TextureEntry> entries;
   uint16 width;
   uint16 height;
   uint16 depth;
@@ -58,8 +68,6 @@ struct TextureUnit {
   TextureFlags flags;
 };
 
-template <uint32 streamId> struct TextureStream;
-
 TextureUnit AddTexture(std::shared_ptr<common::ResourceData> res);
 TextureUnit LookupTexture(uint32 hash);
 void ClampTextureResolution(uint32 clampedRes);
@@ -70,39 +78,3 @@ void StreamTextures(size_t streamIndex);
 
 common::ResourceHash RedirectTexture(common::ResourceHash tex, size_t index);
 } // namespace prime::graphics
-
-HASH_CLASS(prime::graphics::Texture);
-HASH_CLASS(prime::graphics::TextureStream<0>);
-HASH_CLASS(prime::graphics::TextureStream<1>);
-HASH_CLASS(prime::graphics::TextureStream<2>);
-HASH_CLASS(prime::graphics::TextureStream<3>);
-
-template <>
-constexpr std::string_view
-prime::common::GetClassExtension<prime::graphics::Texture>() {
-  return "gth";
-}
-
-template <>
-constexpr std::string_view
-prime::common::GetClassExtension<prime::graphics::TextureStream<0>>() {
-  return "gtb0";
-}
-
-template <>
-constexpr std::string_view
-prime::common::GetClassExtension<prime::graphics::TextureStream<1>>() {
-  return "gtb1";
-}
-
-template <>
-constexpr std::string_view
-prime::common::GetClassExtension<prime::graphics::TextureStream<2>>() {
-  return "gtb2";
-}
-
-template <>
-constexpr std::string_view
-prime::common::GetClassExtension<prime::graphics::TextureStream<3>>() {
-  return "gtb3";
-}

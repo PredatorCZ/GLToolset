@@ -17,7 +17,7 @@
 
 #include "datas/app_context.hpp"
 #include "datas/binreader_stream.hpp"
-#include "datas/binwritter.hpp"
+#include "datas/binwritter_stream.hpp"
 #include "datas/directory_scanner.hpp"
 #include "datas/fileinfo.hpp"
 #include "datas/master_printer.hpp"
@@ -31,9 +31,9 @@
 #include <GL/gl.h>
 #include <GL/glext.h>
 
-es::string_view filters[]{
-    ".jpeg$", ".jpg$", ".bmp$", ".psd$", ".tga$", ".gif$",
-    ".hdr$",  ".pic$", ".ppm$", ".pgm$", {},
+std::string_view filters[]{
+    ".jpeg$", ".jpg$", ".bmp$", ".psd$", ".tga$",
+    ".gif$",  ".hdr$", ".pic$", ".ppm$", ".pgm$",
 };
 
 MAKE_ENUM(ENUMSCOPE(class RGBAType
@@ -95,19 +95,17 @@ REFLECT(
                    "Exclusive pixel limit per stream. Must be power of 2."}), )
 
 static AppInfo_s appInfo{
-    AppInfo_s::CONTEXT_VERSION,
-    AppMode_e::CONVERT,
-    ArchiveLoadType::FILTERED,
-    GLTEX_DESC " v" GLTEX_VERSION ", " GLTEX_COPYRIGHT "Lukas Cone",
-    reinterpret_cast<ReflectorFriend *>(&settings),
-    filters,
+    .filteredLoad = true,
+    .header = GLTEX_DESC " v" GLTEX_VERSION ", " GLTEX_COPYRIGHT "Lukas Cone",
+    .settings = reinterpret_cast<ReflectorFriend *>(&settings),
+    .filters = filters,
 };
 
 AppInfo_s *AppInitModule() { return &appInfo; }
 
 bool AppInitContext(const std::string &) {
   if (!settings.normalMapPatterns.empty()) {
-    es::string_view sv(settings.normalMapPatterns);
+    std::string_view sv(settings.normalMapPatterns);
     size_t lastPost = 0;
     auto found = sv.find(',');
 
@@ -187,6 +185,7 @@ uint16 texture2DTypes[]{
     GL_UNSIGNED_INT_8_8_8_8_REV,
     GL_UNSIGNED_INT_10_10_10_2,
     GL_UNSIGNED_INT_2_10_10_10_REV,
+    GL_INT_2_10_10_10_REV,
 };
 
 uint16 texture2DInternalFormat[]{
@@ -444,11 +443,10 @@ void ForEachMipmap(RawImageData &ctx, uint32 numMips, fc &&cb) {
   }
 };
 
-void AppProcessFile(std::istream &stream, AppContext *ctx) {
-  AFileInfo fleInfo(ctx->outFile);
+void AppProcessFile(AppContext *ctx) {
   const bool isNormalMap =
-      settings.normalExts.IsFiltered(fleInfo.GetFilename());
-  auto rawData = GetImageData(stream, isNormalMap);
+      settings.normalExts.IsFiltered(ctx->workingFile.GetFilename());
+  auto rawData = GetImageData(ctx->GetStream(), isNormalMap);
 
   auto CountBits = [](size_t x) {
     size_t numBits = 0;
@@ -462,11 +460,11 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
 
   using namespace prime::graphics;
 
-  auto outFile = fleInfo.GetFullPathNoExt().to_string();
-  char indexExt[] = ".gtbx";
+  auto outFile = ctx->workingFile.ChangeExtension2(
+      prime::common::GetClassExtension<prime::graphics::TextureStream<0>>());
   size_t currentStream = NUM_STREAMS;
   size_t maxUsedStream = 0;
-  BinWritter wr;
+  BinWritterRef wr;
 
   auto UpdateStream = [&] {
     const size_t minPixel = std::min(rawData.width, rawData.height);
@@ -476,9 +474,8 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
         if (currentStream != i) {
           currentStream = i;
           maxUsedStream = std::max(maxUsedStream, i);
-          indexExt[sizeof(indexExt) - 2] = '0' + i;
-          BinWritter newWr(outFile + indexExt);
-          std::swap(newWr, wr);
+          outFile.back() = '0' + i;
+          wr = ctx->NewFile(outFile);
         }
 
         break;
@@ -781,11 +778,12 @@ void AppProcessFile(std::istream &stream, AppContext *ctx) {
               return i1.streamIndex < i2.streamIndex;
             });
 
-  hdr.entries.pointer = sizeof(Texture);
+  hdr.entries.pointer = sizeof(Texture) - offsetof(Texture, entries.pointer);
   hdr.entries.numItems = entries.size();
   hdr.numStreams = maxUsedStream + 1;
-  outFile = fleInfo.GetFullPathNoExt().to_string() + ".gth";
-  BinWritter wrh(outFile);
+  outFile = ctx->workingFile.ChangeExtension2(
+      prime::common::GetClassExtension<prime::graphics::Texture>());
+  BinWritterRef wrh(ctx->NewFile(outFile));
   wrh.Write(hdr);
   wrh.WriteContainer(entries);
 }

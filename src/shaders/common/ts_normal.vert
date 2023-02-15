@@ -1,36 +1,52 @@
 // Defines
 // TS_MATRIX: Use matrix for tangent space
 // TS_QUAT: Use quat for tangent space instead of matrix
-// TS_NORMAL_ONLY: Use only vertex normal (when TS is not used)
+// TS_NORMAL_ATTR: Use normal attribute
+// TS_TANGENT_ATTR: Use tangent attribute
 
-#if defined(TS_NORMAL_ONLY) || defined(TS_MATRIX)
+#ifdef TS_NORMAL_ATTR
 in vec3 inNormal;
 #endif
 
-#ifdef TS_QUAT
-in vec4 inQTangent;
-#include "quat.glsl"
-#elif defined(TS_MATRIX)
+#ifdef TS_TANGENT_ATTR
 in vec4 inTangent;
-mat3 tsTransform;
 #endif
 
+#ifdef TS_QUAT
+#include "quat.glsl"
+vec4 tsTangent_;
+
 void GetTSNormal() {
-#ifdef TS_MATRIX
+    tsTangent_ = inTangent;
+}
+
+vec3 TransformTSNormal(vec3 point) {
+    vec3 realPoint = sign(tsTangent_.x) * point;
+    return QTransformPoint(tsTangent_, realPoint);
+}
+
+#elif defined(TS_NORMAL_ATTR) && defined(TS_TANGENT_ATTR)
+mat3 tsTransform_;
+
+void GetTSNormal() {
     mat3 TBN;
     TBN[2] = inNormal;
     TBN[0] = inTangent.xyz;
     TBN[1] = cross(inTangent.xyz, inNormal) * inTangent.w;
-    tsTransform = transpose(TBN);
-#endif
+    tsTransform_ = transpose(TBN);
 }
 
 vec3 TransformTSNormal(vec3 point) {
-#ifdef TS_QUAT
-    return QTransformPoint(inQTangent, point);
-#elif defined(TS_MATRIX)
-    return tsTransform * point;
-#else
-    return point;
-#endif
+    return tsTransform_ * point;
 }
+
+#else
+
+void GetTSNormal() {
+}
+
+vec3 TransformTSNormal(vec3 point) {
+    return point;
+}
+
+#endif

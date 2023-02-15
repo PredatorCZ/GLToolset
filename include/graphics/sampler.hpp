@@ -2,6 +2,14 @@
 #include "common/array.hpp"
 
 namespace prime::graphics {
+struct SamplerProp;
+struct Sampler;
+} // namespace prime::graphics
+
+HASH_CLASS(prime::graphics::SamplerProp);
+CLASS_EXT(prime::graphics::Sampler);
+
+namespace prime::graphics {
 enum class SamplerPropType : uint8 {
   Invalid,
   Int,
@@ -18,13 +26,10 @@ struct SamplerProp {
     uint8 propColor[4];
   };
 };
-} // namespace prime::graphics
 
-HASH_CLASS(prime::graphics::SamplerProp);
-
-namespace prime::graphics {
-struct Sampler {
-  common::Array<SamplerProp> props;
+struct Sampler : common::Resource {
+  Sampler() : CLASS_VERSION(1) {}
+  common::LocalArray16<SamplerProp> props;
 };
 
 uint32 AddSampler(uint32 hash, const Sampler &sampler);
@@ -32,11 +37,3 @@ void SetDefaultAnisotropy(uint32 newValue);
 uint32 LookupSampler(uint32 hash);
 
 }; // namespace prime::graphics
-
-HASH_CLASS(prime::graphics::Sampler);
-
-template <>
-constexpr std::string_view
-prime::common::GetClassExtension<prime::graphics::Sampler>() {
-  return "spl";
-}

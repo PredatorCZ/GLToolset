@@ -4,7 +4,7 @@
 
 namespace prime::shaders {
 
-#define vec3 alignas(16) glm::vec3
+#define vec3 alignas(16) glm::highp_vec3
 #define vec4 alignas(16) glm::vec4
 #define mat4 alignas(16) glm::mat4
 #define dquat_arr(name, numItems) alignas(16) glm::dualquat name[numItems]

@@ -5,21 +5,20 @@
 #include <fstream>
 #include <sstream>
 
+#define GL_FRAGMENT_SHADER 0x8B30
+#define GL_VERTEX_SHADER 0x8B31
+#define GL_GEOMETRY_SHADER 0x8DD9
+
 namespace prime::utils {
 
 static std::string SHADERS_SOURCE_DIR;
 
-std::string PreProcess(const std::string &path, simplecpp::DUI &dui) {
+std::string PreProcess(common::ResourceHash object, simplecpp::DUI &dui) {
   simplecpp::OutputList outputList;
   std::vector<std::string> files;
-  std::string filename = SHADERS_SOURCE_DIR + path;
-  std::ifstream f(filename);
-
-  if (f.fail()) {
-    throw es::FileNotFoundError(filename);
-  }
-
-  simplecpp::TokenList rawtokens(f, files, filename, &outputList);
+  auto &res = common::LoadResource(object);
+  std::stringstream iStr(res.buffer);
+  simplecpp::TokenList rawtokens(iStr, files, SHADERS_SOURCE_DIR, &outputList);
   auto included = simplecpp::load(rawtokens, files, dui, &outputList);
   simplecpp::TokenList outputTokens(files);
   simplecpp::preprocess(outputTokens, rawtokens, files, included, dui,
@@ -79,141 +78,44 @@ std::string PreProcess(const std::string &path, simplecpp::DUI &dui) {
 
   simplecpp::cleanup(included);
 
-  return ret.str();
+  return std::move(ret).str();
 }
 
-common::ResourceData PreprocessShaderSource(VertexShaderFeatures features,
-                                            const std::string &path) {
-  uint32 objectHash = JenkinsHash3_(path, features.Seed());
+std::string PreprocessShader(uint32 object, uint16 target,
+                             std::string_view definitionBuffer) {
   simplecpp::DUI dui;
   dui.defines.emplace_back("SHADER");
-  dui.defines.emplace_back("VERTEX");
-  char tmpBuffer[0x20]{};
+  dui.includePaths.emplace_back(SHADERS_SOURCE_DIR);
 
-  {
-    static const char fmt[] = "VS_NUMBONES=%u";
-    snprintf(tmpBuffer, sizeof(tmpBuffer), fmt, features.numBones);
-    dui.defines.emplace_back(tmpBuffer);
-  }
-
-  {
-    static const char fmt[] = "VS_NUMUVS2=%u";
-    snprintf(tmpBuffer, sizeof(tmpBuffer), fmt, features.numVec2UVs);
-    dui.defines.emplace_back(tmpBuffer);
-  }
-
-  {
-    static const char fmt[] = "VS_NUMUVS4=%u";
-    snprintf(tmpBuffer, sizeof(tmpBuffer), fmt, features.numVec4UVs);
-    dui.defines.emplace_back(tmpBuffer);
-  }
-
-  {
-    static const char fmt[] = "NUM_LIGHTS=%u";
-    snprintf(tmpBuffer, sizeof(tmpBuffer), fmt, features.numLights);
-    dui.defines.emplace_back(tmpBuffer);
-
-    if (features.numLights) {
-      dui.includes.emplace_back(SHADERS_SOURCE_DIR + "common/light_omni.vert");
-    }
-  }
-
-  if (features.useInstances) {
-    dui.defines.emplace_back("VS_INSTANCED");
-  }
-
-  {
-    static const char fmt[] = "VS_POSTYPE=%s";
-    const char *posType = nullptr;
-
-    switch (features.posType) {
-    case VSPosType::Vec3:
-      posType = "vec3";
-      break;
-    case VSPosType::Vec4:
-      posType = "vec4";
-      break;
-    case VSPosType::IVec3:
-      posType = "ivec3";
-      break;
-    case VSPosType::IVec4:
-      posType = "ivec4";
-      break;
-    default:
-      break;
-    }
-
-    snprintf(tmpBuffer, sizeof(tmpBuffer), fmt, posType);
-    dui.defines.emplace_back(tmpBuffer);
-  }
-
-  switch (features.tangentSpace) {
-  case VSTSFeat::Normal:
-    dui.defines.emplace_back("TS_NORMAL_ONLY");
+  switch (target) {
+  case GL_VERTEX_SHADER:
+    dui.defines.emplace_back("VERTEX");
+    dui.includes.emplace_back(SHADERS_SOURCE_DIR + "common/common.vert");
     break;
-  case VSTSFeat::Matrix:
-    dui.defines.emplace_back("TS_MATRIX");
+  case GL_FRAGMENT_SHADER:
+    dui.defines.emplace_back("FRAGMENT");
+    dui.includes.emplace_back(SHADERS_SOURCE_DIR + "common/common.frag");
     break;
-  case VSTSFeat::Quat:
-    dui.defines.emplace_back("TS_QUAT");
+  case GL_GEOMETRY_SHADER:
+    dui.defines.emplace_back("GEOMETRY");
     break;
   default:
-    break;
+    throw std::runtime_error("Invalid target");
   }
 
-  if (features.tangentSpace != VSTSFeat::None) {
-    dui.includes.emplace_back(SHADERS_SOURCE_DIR + "common/ts_normal.vert");
+
+
+  while (definitionBuffer.size()) {
+    int8 len = definitionBuffer.front();
+    definitionBuffer.remove_prefix(1);
+    dui.defines.emplace_back(definitionBuffer.substr(0, len));
+    definitionBuffer.remove_prefix(len);
   }
 
-  dui.includes.emplace_back(SHADERS_SOURCE_DIR + "common/common.vert");
-
-  return {common::MakeHash<char>(objectHash), PreProcess(path, dui)};
-}
-
-common::ResourceData PreprocessShaderSource(FragmentShaderFeatures features,
-                                            const std::string &path) {
-  uint32 objectHash = JenkinsHash3_(path, features.Seed());
-  simplecpp::DUI dui;
-  dui.defines.emplace_back("SHADER");
-  dui.defines.emplace_back("FRAGMENT");
-  char tmpBuffer[0x20]{};
-
-  {
-    static const char fmt[] = "NUM_LIGHTS=%u";
-    snprintf(tmpBuffer, sizeof(tmpBuffer), fmt, features.numLights);
-    dui.defines.emplace_back(tmpBuffer);
-
-    if (features.numLights) {
-      dui.includes.emplace_back(SHADERS_SOURCE_DIR + "common/light_omni.frag");
-    }
-  }
-
-  if (!features.signedNormal) {
-    dui.defines.emplace_back("TS_NORMAL_UNORM");
-  }
-
-  if (features.deriveZNormal) {
-    dui.defines.emplace_back("TS_NORMAL_DERIVE_Z");
-  }
-
-  dui.includes.emplace_back(SHADERS_SOURCE_DIR + "common/ts_normal.frag");
-
-  return {common::MakeHash<char>(objectHash), PreProcess(path, dui)};
+  return PreProcess(common::MakeHash<char>(object), dui);
 }
 
 void SetShadersSourceDir(const std::string &path) { SHADERS_SOURCE_DIR = path; }
 const std::string &ShadersSourceDir() { return SHADERS_SOURCE_DIR; }
-
-uint32 VertexShaderFeatures::Seed() const {
-  uint32 objectHashSeed =
-      JenkinsHash3_({reinterpret_cast<const char *>(this), sizeof(*this)});
-  return objectHashSeed;
-}
-
-uint32 FragmentShaderFeatures::Seed() const {
-  uint32 objectHashSeed =
-      JenkinsHash3_({reinterpret_cast<const char *>(this), sizeof(*this)});
-  return objectHashSeed;
-}
 
 } // namespace prime::utils

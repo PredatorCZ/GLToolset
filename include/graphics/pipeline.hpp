@@ -1,5 +1,21 @@
 #pragma once
 #include "common/array.hpp"
+#include "common/resource.hpp"
+#include "vertex_type.hpp"
+
+namespace prime::graphics {
+struct UniformBlockData;
+struct SampledTexture;
+struct UniformBlock;
+struct StageObject;
+struct Pipeline;
+} // namespace prime::graphics
+
+CLASS_EXT(prime::graphics::UniformBlockData);
+HASH_CLASS(prime::graphics::SampledTexture);
+HASH_CLASS(prime::graphics::UniformBlock);
+HASH_CLASS(prime::graphics::StageObject);
+CLASS_EXT(prime::graphics::Pipeline);
 
 namespace prime::graphics {
 struct SampledTexture {
@@ -20,50 +36,25 @@ struct StageObject {
 };
 
 struct UniformBlock {
-  uint64 dataObject;
+  common::ResourcePtr<UniformBlockData> data;
   uint32 bufferObject;
+  uint32 location;
   uint32 dataSize;
-};
-} // namespace prime::graphics
-
-HASH_CLASS(prime::graphics::SampledTexture);
-HASH_CLASS(prime::graphics::StageObject);
-HASH_CLASS(prime::graphics::UniformBlock);
-
-namespace prime::graphics {
-enum class VertexType {
-  Position,
-  Tangent,
-  QTangent,
-  Normal,
-  TexCoord20,
-  TexCoord21,
-  TexCoord22,
-  TexCoord23,
-  TexCoord40,
-  TexCoord41,
-  TexCoord42,
-  TexCoord43,
-  Transforms,
-  count_,
 };
 
 struct BaseProgramLocations {
   union {
-    uint8 attributesLocations[size_t(VertexType::count_)]{};
+    uint8 attributesLocations[size_t(VertexType::count_)]{
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    };
     struct {
       uint8 inPos;
       uint8 inTangent;
-      uint8 inQTangent;
       uint8 inNormal;
-      uint8 inTexCoord20;
-      uint8 inTexCoord21;
-      uint8 inTexCoord22;
-      uint8 inTexCoord23;
+      uint8 inTexCoord2;
       uint8 inTexCoord40;
       uint8 inTexCoord41;
       uint8 inTexCoord42;
-      uint8 inTexCoord43;
       uint8 inTransform;
     };
   };
@@ -75,32 +66,15 @@ struct BaseProgramLocations {
   uint32 ubInstanceTransforms;
 };
 
-struct Pipeline {
-  common::Array<StageObject> stageObjects;
-  common::Array<SampledTexture> textureUnits;
-  common::Array<UniformBlock> uniformBlocks;
+struct Pipeline : common::Resource {
+  Pipeline() : CLASS_VERSION(1) {}
+  common::LocalArray32<StageObject> stageObjects;
+  common::LocalArray32<SampledTexture> textureUnits;
+  common::LocalArray32<UniformBlock> uniformBlocks;
+  common::LocalArray32<char> definitions;
   BaseProgramLocations locations{};
   uint32 program;
 
   void BeginRender() const;
 };
-
-struct UniformBlockData;
-
-void AddPipeline(Pipeline &pipeline);
 } // namespace prime::graphics
-
-HASH_CLASS(prime::graphics::Pipeline);
-HASH_CLASS(prime::graphics::UniformBlockData);
-
-template <>
-constexpr std::string_view
-prime::common::GetClassExtension<prime::graphics::Pipeline>() {
-  return "ppe";
-}
-
-template <>
-constexpr std::string_view
-prime::common::GetClassExtension<prime::graphics::UniformBlockData>() {
-  return "ubb";
-}

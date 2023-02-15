@@ -5,11 +5,11 @@
 
 namespace prime::common {
 union ResourceHash {
+  uint64 hash = 0;
   struct {
     uint32 name;
     uint32 type;
   };
-  uint64 hash = 0;
 
   ResourceHash() = default;
   ResourceHash(const ResourceHash &) = default;
@@ -19,6 +19,30 @@ union ResourceHash {
       : name(name_), type(type_) {}
   bool operator<(const ResourceHash &other) const { return hash < other.hash; }
 };
+
+template <class C> union ResourcePtr {
+  ResourceHash resourceHash{};
+  C *resourcePtr;
+
+  operator C *() { return resourcePtr; }
+  C *operator->() { return resourcePtr; }
+};
+
+template <typename, typename = void> constexpr bool is_type_complete_v = false;
+
+template <typename T>
+constexpr bool is_type_complete_v<T, std::void_t<decltype(sizeof(T))>> = true;
+
+template <class C> void LinkResource(ResourcePtr<C> &ptr) {
+  auto &resData = LoadResource(ptr.resourceHash);
+  ptr.resourcePtr = resData.template As<C>();
+
+  if constexpr (is_type_complete_v<C>) {
+    if constexpr (std::is_base_of_v<Resource, C>) {
+      ptr.resourcePtr->refCount++;
+    }
+  }
+}
 
 template <class C> ResourceHash MakeHash(uint32 name) {
   return ResourceHash{name, GetClassHash<C>()};
@@ -33,16 +57,29 @@ struct ResourceData {
   ResourceHash hash;
   std::string buffer;
 
-  template <class C> C *As() { return reinterpret_cast<C *>(buffer.data()); }
+  template <class C> C *As() {
+    C *item = reinterpret_cast<C *>(buffer.data());
+
+    if constexpr (is_type_complete_v<C>) {
+      if constexpr (std::is_base_of_v<Resource, C>) {
+        ValidateClass(*item);
+      }
+    }
+
+    return item;
+  }
 };
 
 // Load resource data, don't add it to global registry
 ResourceData LoadResource(const std::string &path);
-void AddSimpleResource(ResourceData &&resource);
+ResourceData &FindResource(const void *address);
+
 void SetWorkingFolder(const std::string &path);
 const std::string &WorkingFolder();
+void FreeResource(ResourceData &resource);
 
 // Add resource to global registry for deferred loading
+void AddSimpleResource(ResourceData &&resource);
 ResourceHash AddSimpleResource(std::string path, uint32 classHash);
 template <class C> ResourceHash AddSimpleResource(const std::string &path) {
   return AddSimpleResource(path, GetClassHash<C>());
@@ -50,5 +87,18 @@ template <class C> ResourceHash AddSimpleResource(const std::string &path) {
 
 // Load resource data, that are registered via AddSimpleResource
 ResourceData &LoadResource(ResourceHash hash);
+
+template <class C> struct InvokeGuard;
+
+struct ResourceHandle {
+  void (*Process)(ResourceData &res);
+  void (*Delete)(ResourceData &res);
+};
+
+bool AddResourceHandle(uint32 hash, ResourceHandle handle);
+
+template <class C> bool AddResourceHandle(ResourceHandle handle) {
+  return AddResourceHandle(GetClassHash<C>(), handle);
+}
 
 } // namespace prime::common

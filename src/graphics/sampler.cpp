@@ -8,6 +8,7 @@ static uint32 anisotropy = 1;
 
 namespace prime::graphics {
 uint32 AddSampler(uint32 hash, const Sampler &sampler) {
+  ValidateClass(sampler);
   uint32 unit;
   glGenSamplers(1, &unit);
   samplerUnits.insert({hash, unit});
@@ -23,7 +24,7 @@ uint32 AddSampler(uint32 hash, const Sampler &sampler) {
       break;
     case SamplerPropType::Color: {
       Vector4 unpacked =
-          reinterpret_cast<UCVector4 *>(p.propColor)->Convert<float>() *
+          reinterpret_cast<const UCVector4 *>(p.propColor)->Convert<float>() *
           (1.f / 0xff);
       glSamplerParameterfv(unit, p.id, unpacked._arr);
       break;

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.3)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 project(GLToolset VERSION 1.0)
 
 if(NOT MSVC)
@@ -8,15 +8,15 @@ if(NOT MSVC)
 endif()
 
 set(TPD_PATH ${CMAKE_CURRENT_SOURCE_DIR}/3rd_party)
-set(PUGI_SHARED_LIBS
+set(BUILD_SHARED_LIBS
     ON
     CACHE BOOL "")
-set(PC_SHARED_LIB
-    ON
+set(BUILD_STATIC_OBJECTS
+    OFF
     CACHE BOOL "")
-set(GLTF_SHARED_LIB
+set(NO_OBJECTS
     ON
-    CACHE BOOL "")
+    CACHE BOOL "" FORCE)
 
 add_subdirectory(${TPD_PATH}/precore)
 include(targetex)
