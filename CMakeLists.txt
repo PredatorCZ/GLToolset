@@ -54,3 +54,4 @@ add_subdirectory(gltex_view)
 
 add_spike_subdir(gltex)
 add_spike_subdir(glmod)
+add_spike_subdir(cache)
