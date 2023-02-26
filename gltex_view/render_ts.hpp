@@ -55,7 +55,6 @@ struct NormalVisualizer {
     vtArray = vtArrayRes.As<prime::graphics::VertexArray>();
     vtArray->pipeline.resourceHash = pipelineHash;
     vtArray->index = 0;
-    vtArray->refCount = 0;
 
     pc::AddSimpleResource({vtArrayRes.hash, std::move(vtArrayRes.buffer)});
     auto &vtRes = pc::LoadResource(vtArrayRes.hash);

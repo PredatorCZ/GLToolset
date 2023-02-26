@@ -25,6 +25,7 @@ void AddVertexArray(VertexArray &vtArray) {
       buffers.emplace(b.buffer.name, bId);
       auto &resData = common::LoadResource(b.buffer);
       glBufferData(b.target, b.size, resData.buffer.data(), b.usage);
+      common::FreeResource(resData);
     }
 
     for (auto &a : b.attributes) {

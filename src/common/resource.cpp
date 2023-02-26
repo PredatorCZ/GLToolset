@@ -88,7 +88,7 @@ ResourceData &LoadResource(ResourceHash hash) {
 
   if (Registry().contains(hash.type)) {
     Resource *item = reinterpret_cast<Resource *>(res.second.buffer.data());
-    if (item->refCount == 0) {
+    if (res.second.numRefs == 0) {
       Registry().at(hash.type).Process(res.second);
     }
   }

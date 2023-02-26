@@ -36,12 +36,7 @@ constexpr bool is_type_complete_v<T, std::void_t<decltype(sizeof(T))>> = true;
 template <class C> void LinkResource(ResourcePtr<C> &ptr) {
   auto &resData = LoadResource(ptr.resourceHash);
   ptr.resourcePtr = resData.template As<C>();
-
-  if constexpr (is_type_complete_v<C>) {
-    if constexpr (std::is_base_of_v<Resource, C>) {
-      ptr.resourcePtr->refCount++;
-    }
-  }
+  resData.numRefs++;
 }
 
 template <class C> ResourceHash MakeHash(uint32 name) {
@@ -56,6 +51,7 @@ template <class C> ResourceHash MakeHash(std::string_view name) {
 struct ResourceData {
   ResourceHash hash;
   std::string buffer;
+  int32 numRefs = 0;
 
   template <class C> C *As() {
     C *item = reinterpret_cast<C *>(buffer.data());
@@ -77,6 +73,7 @@ ResourceData &FindResource(const void *address);
 void SetWorkingFolder(const std::string &path);
 const std::string &WorkingFolder();
 void FreeResource(ResourceData &resource);
+void ReplaceResource(ResourceData &oldResource, ResourceData &newResource);
 
 // Add resource to global registry for deferred loading
 void AddSimpleResource(ResourceData &&resource);

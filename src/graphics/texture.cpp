@@ -8,7 +8,8 @@
 using namespace prime::graphics;
 
 struct DeferredPayload {
-  std::shared_ptr<prime::common::ResourceData> hdrRes;
+  prime::graphics::Texture &hdr;
+  uint32 hash;
   uint32 object;
   uint32 streamIndex = 0;
 };
@@ -38,10 +39,9 @@ prime::graphics::RedirectTexture(prime::common::ResourceHash tex,
 }
 
 static void LoadBindedTextureLevels(DeferredPayload pl) {
-  auto hdrPtr = pl.hdrRes->As<Texture>();
-  auto &hdr = *hdrPtr;
-  auto &data = prime::common::LoadResource(
-      RedirectTexture(pl.hdrRes->hash, pl.streamIndex));
+  auto &hdr = pl.hdr;
+  auto resource = RedirectTexture(prime::common::ResourceHash(pl.hash), pl.streamIndex);
+  auto &data = prime::common::LoadResource(resource);
   uint8 minLevel = 255;
 
   glBindTexture(hdr.target, pl.object);
@@ -182,18 +182,20 @@ static void LoadBindedTextureLevels(DeferredPayload pl) {
   }
 
   glBindTexture(hdr.target, 0);
+  prime::common::FreeResource(data);
+
+  if (hdr.numStreams == pl.streamIndex + 1) {
+    auto &hdrData = prime::common::FindResource(&hdr);
+    prime::common::FreeResource(hdrData);
+  }
 };
 
-TextureUnit
-prime::graphics::AddTexture(std::shared_ptr<prime::common::ResourceData> res) {
-  auto hdrPtr = res->As<Texture>();
-  auto &hdr = *hdrPtr;
+static TextureUnit AddTexture(prime::graphics::Texture &hdr, uint32 nameHash) {
   TextureUnit unit;
   glGenTextures(1, &unit.id);
   unit.target = hdr.target;
   unit.flags = hdr.flags;
-  TEXTURE_UNITS.insert({res->hash.name, unit});
-  LoadBindedTextureLevels({res, unit.id});
+  LoadBindedTextureLevels({hdr, nameHash, unit.id});
 
   if (hdr.flags == TextureFlag::Swizzle) {
     glTexParameteriv(hdr.target, GL_TEXTURE_SWIZZLE_RGBA, hdr.swizzleMask);
@@ -201,10 +203,10 @@ prime::graphics::AddTexture(std::shared_ptr<prime::common::ResourceData> res) {
 
   for (uint32 i = 1; i < hdr.numStreams; i++) {
     if (i >= MIN_DEFER_LEVEL) {
-      DEFERRED_LOADER_QUEUE[i - 1].emplace_back(
-          std::bind(LoadBindedTextureLevels, DeferredPayload{res, unit.id, i}));
+      DEFERRED_LOADER_QUEUE[i - 1].emplace_back(std::bind(
+          LoadBindedTextureLevels, DeferredPayload{hdr, nameHash, unit.id, i}));
     } else {
-      LoadBindedTextureLevels({res, unit.id, i});
+      LoadBindedTextureLevels({hdr, nameHash, unit.id, i});
     }
   }
 
@@ -212,6 +214,12 @@ prime::graphics::AddTexture(std::shared_ptr<prime::common::ResourceData> res) {
 }
 
 TextureUnit prime::graphics::LookupTexture(uint32 hash) {
+  if (TEXTURE_UNITS.contains(hash)) {
+    return TEXTURE_UNITS.at(hash);
+  }
+
+  common::LoadResource(
+      common::ResourceHash(hash, common::GetClassHash<graphics::Texture>()));
   return TEXTURE_UNITS.at(hash);
 }
 
@@ -229,3 +237,16 @@ void prime::graphics::StreamTextures(size_t streamIndex) {
     DEFERRED_LOADER_QUEUE[streamIndex].pop_back();
   }
 }
+
+template <> class prime::common::InvokeGuard<Texture> {
+  static inline const bool data =
+      prime::common::AddResourceHandle<Texture>({
+          .Process =
+              [](ResourceData &data) {
+                auto hdr = data.As<Texture>();
+                auto unit = AddTexture(*hdr, data.hash.name);
+                TEXTURE_UNITS.emplace(data.hash.name, unit);
+              },
+          .Delete = nullptr,
+      });
+};

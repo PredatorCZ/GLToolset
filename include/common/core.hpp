@@ -127,8 +127,5 @@ std::string_view GetExtentionFromHash(uint32 hash);
 struct Resource {
   uint32 hash;
   uint32 version;
-  int32 refCount = 0;
 };
-
-static_assert(sizeof(Resource) == 12);
 } // namespace prime::common

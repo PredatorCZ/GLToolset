@@ -35,6 +35,7 @@
 #include "graphics/sampler.hpp"
 #include "utils/builder.hpp"
 #include "utils/fixer.hpp"
+#include "utils/resource_report.hpp"
 
 #include "frame_buffer.hpp"
 
@@ -68,10 +69,8 @@ void PreloadResources() {
   pc::AddSimpleResource<char>("basics/aabb_cube.frag");
 
   {
-    pc::ResourceHash hdrTex = pc::AddSimpleResource<pg::Texture>("res/light");
+    pc::AddSimpleResource<pg::Texture>("res/light");
     pc::AddSimpleResource<pg::TextureStream<0>>("res/light");
-    auto hdrData = pc::LoadResource(hdrTex);
-    pg::AddTexture(std::make_shared<pc::ResourceData>(std::move(hdrData)));
   }
 
   {
@@ -92,6 +91,17 @@ pc::ResourceData BuildPipeline(pg::TextureFlags texFlags,
   defBuilder.AddDefine("TS_TANGENT_ATTR");
   defBuilder.AddKeyValue("NUM_LIGHTS", 1);
 
+  const bool isNormal = texFlags == pg::TextureFlag::NormalMap;
+
+  if (isNormal) {
+    if (texFlags == pg::TextureFlag::NormalDeriveZAxis) {
+      defBuilder.AddDefine("TS_NORMAL_DERIVE_Z");
+    }
+    if (texFlags != pg::TextureFlag::SignedNormal) {
+      defBuilder.AddDefine("TS_NORMAL_UNORM");
+    }
+  }
+
   pipeline.SetArray(pipeline.Data().definitions, defBuilder.buffer.size());
   memcpy(pipeline.Data().definitions.begin(), defBuilder.buffer.data(),
          defBuilder.buffer.size());
@@ -104,8 +114,6 @@ pc::ResourceData BuildPipeline(pg::TextureFlags texFlags,
 
   auto &fragObj = stageArray[1];
   fragObj.stageType = GL_FRAGMENT_SHADER;
-
-  const bool isNormal = texFlags == pg::TextureFlag::NormalMap;
 
   if (isNormal) {
     fragObj.object = JenkinsHash3_("single_texture/main_normal.frag");
@@ -165,21 +173,22 @@ struct MainTexture {
   int lastLevel{};
 
   void Render() { object.Render(); }
+
+  void InfoText() { ImGui::Text(infoText.c_str(), lastLevel); }
 };
 
 MainTexture BuildFromTexture(MainUBType &ub, std::string path) {
   auto LoadTexture = [&path] {
     auto mainTexture = pc::AddSimpleResource<pg::Texture>(path);
-    auto hdrData = pc::LoadResource(mainTexture);
-    auto &hdr = *hdrData.template As<pg::Texture>();
 
-    for (size_t s = 0; s < hdr.numStreams; s++) {
+    for (size_t s = 0; s < 4; s++) {
       auto tex = pg::RedirectTexture({}, s);
       pc::AddSimpleResource(path, tex.type);
     }
 
-    auto unit =
-        pg::AddTexture(std::make_shared<pc::ResourceData>(std::move(hdrData)));
+    auto hdrData = pc::LoadResource(mainTexture);
+    auto &hdr = *hdrData.template As<pg::Texture>();
+    auto unit = pg::LookupTexture(mainTexture.name);
 
     return std::make_pair(unit, hdr);
   };
@@ -255,25 +264,13 @@ ModelObject BuildFromModel(std::string path) {
     AFileInfo inf(buffer);
     uint32 clHash = pc::GetClassFromExtension(
         {inf.GetExtension().data() + 1, inf.GetExtension().size()});
-    auto res =
-        pc::AddSimpleResource(std::string(inf.GetFullPathNoExt()), clHash);
-
-    if (clHash == pc::GetClassHash<pg::Texture>()) {
-      auto &hdrData = pc::LoadResource(res);
-      auto &hdr = *hdrData.As<pg::Texture>();
-
-      for (size_t s = 0; s < hdr.numStreams; s++) {
-        auto tex = pg::RedirectTexture(res, s);
-        pc::AddSimpleResource(std::string(inf.GetFullPathNoExt()), tex.type);
-      }
-
-      pg::AddTexture(std::make_shared<pc::ResourceData>(std::move(hdrData)));
-    }
+    pc::AddSimpleResource(std::string(inf.GetFullPathNoExt()), clHash);
   }
 
   auto mainModel = pc::AddSimpleResource<pg::VertexArray>(path);
   auto &hdrData = pc::LoadResource(mainModel);
   auto hdr = hdrData.template As<pg::VertexArray>();
+  hdrData.numRefs++;
   hdr->SetupTransform(true);
   return ModelObject(hdr);
 }
@@ -377,7 +374,7 @@ int main(int, char *argv[]) {
     pc::AddSimpleResource(std::move(pipelineData_));
     auto &pipelineData = pc::LoadResource(pipelineData_.hash);
     auto pipeline = pipelineData.As<pg::Pipeline>();
-    pipeline->refCount++;
+    pipelineData.numRefs++;
     return pipeline;
   }();
 
@@ -655,6 +652,21 @@ int main(int, char *argv[]) {
             }
           }
         }
+        if (ImGui::Begin(
+                "InfoText", nullptr,
+                ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoInputs |
+                    ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground |
+                    ImGuiWindowFlags_NoSavedSettings)) {
+          std::visit(
+              [](auto &i) {
+                if constexpr (!std::is_same_v<std::decay_t<decltype(i)>,
+                                              std::monostate>) {
+                  i.InfoText();
+                }
+              },
+              mainObject);
+        }
+        ImGui::End();
       }
       ImGui::EndChild();
     }
@@ -694,17 +706,6 @@ int main(int, char *argv[]) {
     }
     ImGui::End();
 
-    if (ImGui::Begin("InfoText", nullptr,
-                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoInputs |
-                         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
-                         ImGuiWindowFlags_NoBackground |
-                         ImGuiWindowFlags_NoSavedSettings |
-                         ImGuiWindowFlags_Modal)) {
-      // ImGui::SetWindowPos(ImVec2{0.f, 20.f});
-      // ImGui::Text(mainTexture.infoText.c_str(), mainTexture.lastLevel);
-    }
-    ImGui::End();
-
     if (ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
       if (ImGui::CollapsingHeader("Light 0", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::ColorPicker3(
@@ -726,12 +727,51 @@ int main(int, char *argv[]) {
       }
 
       ImGui::Checkbox("lockedLight", &lockedLight);
-
-      /*if (ImGui::CollapsingHeader("Debug", ImGuiTreeNodeFlags_DefaultOpen))
-     { ImGui::Checkbox("Use TBN", &mainProgram->useTBN);
-      }*/
     }
     ImGui::End();
+
+    if (ImGui::Begin("Resources", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+      if (ImGui::BeginTable("ResourceTable", 6, ImGuiTableFlags_BordersInner)) {
+        // ImGui::TableSetupScrollFreeze(3, 1);
+
+        ImGui::TableSetupColumn("Class", ImGuiTableColumnFlags_WidthStretch,
+                                20);
+        ImGui::TableSetupColumn("Path", ImGuiTableColumnFlags_WidthStretch, 65);
+        ImGui::TableSetupColumn("Num refs", ImGuiTableColumnFlags_WidthStretch,
+                                5);
+        ImGui::TableSetupColumn("Hash", ImGuiTableColumnFlags_WidthStretch, 5);
+        ImGui::TableSetupColumn("Data size", ImGuiTableColumnFlags_WidthStretch,
+                                5);
+        ImGui::TableHeadersRow();
+
+        pc::IterateResources([](std::string_view path,
+                                std::string_view className, uint32 nameHash,
+                                int32 numRefs, size_t dataSize) {
+          ImGui::TableNextRow();
+          ImGui::TableNextColumn();
+          ImGui::TextUnformatted(className.begin(), className.end());
+          ImGui::TableNextColumn();
+          ImGui::TextUnformatted(path.begin(), path.end());
+          ImGui::TableNextColumn();
+
+          if (numRefs < 0) {
+            ImGui::TextUnformatted("N/A");
+          } else {
+            ImGui::Text("%u", numRefs);
+          }
+
+          ImGui::TableNextColumn();
+          ImGui::Text("%.8X", nameHash);
+          ImGui::TableNextColumn();
+          ImGui::Text("%zu", dataSize);
+          ImGui::TableNextColumn();
+        });
+
+        ImGui::EndTable();
+      }
+    }
+    ImGui::End();
+
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 

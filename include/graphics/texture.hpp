@@ -68,7 +68,6 @@ struct TextureUnit {
   TextureFlags flags;
 };
 
-TextureUnit AddTexture(std::shared_ptr<common::ResourceData> res);
 TextureUnit LookupTexture(uint32 hash);
 void ClampTextureResolution(uint32 clampedRes);
 // Range [1, 3], default 1
