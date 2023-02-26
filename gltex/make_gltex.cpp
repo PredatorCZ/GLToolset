@@ -475,7 +475,7 @@ void AppProcessFile(AppContext *ctx) {
           currentStream = i;
           maxUsedStream = std::max(maxUsedStream, i);
           outFile.back() = '0' + i;
-          wr = ctx->NewFile(outFile);
+          wr = ctx->NewFile(outFile).str;
         }
 
         break;
@@ -783,7 +783,7 @@ void AppProcessFile(AppContext *ctx) {
   hdr.numStreams = maxUsedStream + 1;
   outFile = ctx->workingFile.ChangeExtension2(
       prime::common::GetClassExtension<prime::graphics::Texture>());
-  BinWritterRef wrh(ctx->NewFile(outFile));
+  BinWritterRef wrh(ctx->NewFile(outFile).str);
   wrh.Write(hdr);
   wrh.WriteContainer(entries);
 }

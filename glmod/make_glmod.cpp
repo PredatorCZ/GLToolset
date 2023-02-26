@@ -134,7 +134,7 @@ void ProcessFile(Header &item) {
   }
 
   if (item.numFrames > 1) {
-    // throw std::runtime_error("Only one frame is supported");
+    printwarning("Only one frame is supported");
   }
 
   if (item.numCommands == 0) {
@@ -536,13 +536,19 @@ void Process(MD2::Header &hdr, AppContext *ctx) {
   std::vector<std::string> refs;
 
   // Dump position buffer
-  auto outFile = std::string(ctx->workingFile.GetFullPathNoExt()) + "-pos";
-  auto posHash = pc::MakeHash<pg::VertexBufferData>(outFile);
-  outFile += "." + std::string(pc::GetClassExtension<pg::VertexBufferData>());
-  refs.push_back(outFile);
+  auto outFile = std::string(ctx->workingFile.GetFullPathNoExt());
+  pc::ResourceHash posHash;
+  outFile += "." + std::string(pc::GetClassExtension<pg::VertexVshData>());
+  AFileInfo outPath;
+  std::string outDir;
 
   {
-    BinWritterRef wrh(ctx->NewFile(outFile));
+    auto nctx = ctx->NewFile(outFile);
+    outPath.Load(nctx.fullPath.data() + nctx.delimiter);
+    outDir = nctx.fullPath.substr(0, nctx.delimiter);
+    posHash = pc::MakeHash<pg::VertexVshData>(outPath.GetFullPathNoExt());
+    refs.push_back(nctx.fullPath.data() + nctx.delimiter);
+    BinWritterRef wrh(nctx.str);
 
     for (auto &v : oVertices) {
       wrh.Write(UCVector4(v.position.x, v.position.y, v.position.z, 0));
@@ -550,13 +556,15 @@ void Process(MD2::Header &hdr, AppContext *ctx) {
   }
 
   // Dump index buffer
-  outFile = std::string(ctx->workingFile.GetFullPathNoExt()) + "-indices";
-  auto indicesHash = pc::MakeHash<pg::VertexBufferData>(outFile);
-  outFile += "." + std::string(pc::GetClassExtension<pg::VertexBufferData>());
-  refs.push_back(outFile);
+  outFile = std::string(ctx->workingFile.GetFullPathNoExt());
+  pc::ResourceHash indicesHash;
+  outFile += "." + std::string(pc::GetClassExtension<pg::VertexIndexData>());
 
   {
-    BinWritterRef wrh(ctx->NewFile(outFile));
+    auto nctx = ctx->NewFile(outFile);
+    indicesHash = pc::MakeHash<pg::VertexIndexData>(outPath.GetFullPathNoExt());
+    refs.push_back(nctx.fullPath.data() + nctx.delimiter);
+    BinWritterRef wrh(nctx.str);
     wrh.WriteContainer(indices);
   }
 
@@ -570,13 +578,15 @@ void Process(MD2::Header &hdr, AppContext *ctx) {
   }
 
   // Dump pixel buffer
-  outFile = std::string(ctx->workingFile.GetFullPathNoExt()) + "-pixel";
-  auto pixelHash = pc::MakeHash<pg::VertexBufferData>(outFile);
-  outFile += "." + std::string(pc::GetClassExtension<pg::VertexBufferData>());
-  refs.push_back(outFile);
+  outFile = std::string(ctx->workingFile.GetFullPathNoExt());
+  pc::ResourceHash pixelHash;
+  outFile += "." + std::string(pc::GetClassExtension<pg::VertexPshData>());
 
   {
-    BinWritterRef wrh(ctx->NewFile(outFile));
+    auto nctx = ctx->NewFile(outFile);
+    pixelHash = pc::MakeHash<pg::VertexPshData>(outPath.GetFullPathNoExt());
+    refs.push_back(nctx.fullPath.data() + nctx.delimiter);
+    BinWritterRef wrh(nctx.str);
 
     for (size_t v = 0; v < oVertices.size(); v++) {
       SVector4 tang = uData.tangents.at(v);
@@ -591,28 +601,11 @@ void Process(MD2::Header &hdr, AppContext *ctx) {
   }
 
   // Create pipeline
-  auto ppeHash =
-      pc::MakeHash<pg::Pipeline>(ctx->workingFile.GetFullPathNoExt());
-  outFile =
-      ctx->workingFile.ChangeExtension2(pc::GetClassExtension<pg::Pipeline>());
+  auto ppeHash = pc::MakeHash<pg::Pipeline>(outPath.GetFullPathNoExt());
+  outFile = outPath.ChangeExtension2(pc::GetClassExtension<pg::Pipeline>());
   refs.push_back(outFile);
 
   {
-    prime::utils::Builder<pg::Pipeline> pipeline;
-    pipeline.SetArray(pipeline.Data().stageObjects, 2);
-    pipeline.SetArray(pipeline.Data().uniformBlocks, 1);
-
-    size_t numTextures = 1;
-
-    AFileInfo textureFile(hdr.skins->path);
-    AFileInfo newBranch(textureFile.CatchBranch(outFile));
-    uint32 texHash = JenkinsHash3_(newBranch.GetFullPathNoExt());
-    auto outTexture =
-        newBranch.ChangeExtension2(pc::GetClassExtension<pg::Texture>());
-    refs.push_back(outTexture);
-
-    pipeline.SetArray(pipeline.Data().textureUnits, numTextures);
-
     prime::utils::DefineBuilder defBuilder;
     defBuilder.AddDefine("TS_TANGENT_ATTR");
     defBuilder.AddDefine("TS_QUAT");
@@ -621,6 +614,82 @@ void Process(MD2::Header &hdr, AppContext *ctx) {
     defBuilder.AddDefine("VS_POSTYPE=vec3");
     defBuilder.AddDefine("VS_NUMUVS2=1");
 
+    AFileInfo textureFile(hdr.skins->path);
+    AFileInfo newBranch(textureFile.CatchBranch(outFile));
+
+    static const auto extD = pc::GetClassExtension<pg::TextureStream<0>>();
+    static std::string_view ext(extD);
+
+    struct TextureSlot {
+      uint32 hash;
+      std::string_view slot;
+    };
+
+    std::vector<TextureSlot> textures;
+
+    auto AddStreams = [ctx, &refs, &outDir](std::string &mainPath) {
+      size_t numStreams = 4;
+
+      try {
+        auto texStream = ctx->RequestFile(outDir + mainPath);
+        BinReaderRef txrd(*texStream.Get());
+        pg::Texture txHdr;
+        txrd.Read(txHdr);
+        numStreams = txHdr.numStreams;
+      } catch (...) {
+      }
+
+      for (size_t s = 0; s < numStreams; s++) {
+        std::string texStream(AFileInfo(mainPath).GetFullPathNoExt());
+        texStream.push_back('.');
+        texStream.append(ext.substr(0, 3));
+        texStream.push_back('0' + s);
+        refs.push_back(texStream);
+      }
+    };
+
+    static const auto texExt = pc::GetClassExtension<pg::Texture>();
+
+    {
+      uint32 texHash = JenkinsHash3_(newBranch.GetFullPathNoExt());
+      auto outTexture = newBranch.ChangeExtension2(texExt);
+      refs.push_back(outTexture);
+      AddStreams(outTexture);
+      textures.emplace_back(TextureSlot{texHash, "smAlbedo"});
+    }
+
+    try {
+      ctx->FindFile(outDir + std::string(newBranch.GetFolder()),
+                    "^" + std::string(newBranch.GetFilename()) + "_normal." +
+                        std::string(texExt) + "$");
+      std::string normalTexture(
+          newBranch.ChangeExtension("_normal." + std::string(texExt)));
+
+      uint32 texHash = JenkinsHash3_(newBranch.ChangeExtension("_normal"));
+      refs.push_back(normalTexture);
+      AddStreams(normalTexture);
+      textures.emplace_back(TextureSlot{texHash, "smNormal"});
+    } catch (const es::FileNotFoundError &) {
+    }
+
+    try {
+      ctx->FindFile(outDir + std::string(newBranch.GetFolder()),
+                    "^" + std::string(newBranch.GetFilename()) + "_fx." +
+                        std::string(texExt) + "$");
+      std::string glowTexture(
+          newBranch.ChangeExtension("_fx." + std::string(texExt)));
+
+      uint32 texHash = JenkinsHash3_(newBranch.ChangeExtension("_fx"));
+      refs.push_back(glowTexture);
+      AddStreams(glowTexture);
+      textures.emplace_back(TextureSlot{texHash, "smGlow"});
+    } catch (const es::FileNotFoundError &) {
+    }
+
+    prime::utils::Builder<pg::Pipeline> pipeline;
+    pipeline.SetArray(pipeline.Data().stageObjects, 2);
+    pipeline.SetArray(pipeline.Data().uniformBlocks, 1);
+    pipeline.SetArray(pipeline.Data().textureUnits, textures.size());
     pipeline.SetArray(pipeline.Data().definitions, defBuilder.buffer.size());
     memcpy(pipeline.Data().definitions.begin(), defBuilder.buffer.data(),
            defBuilder.buffer.size());
@@ -635,10 +704,13 @@ void Process(MD2::Header &hdr, AppContext *ctx) {
     fragObj.object = JenkinsHash3_("simple_model/main.frag");
 
     auto &textureArray = pipeline.Data().textureUnits;
-    auto &texture = textureArray[0];
-    texture.sampler = JenkinsHash3_("res/default");
-    texture.slotHash = JenkinsHash_("smAlbedo");
-    texture.texture = texHash;
+
+    for (size_t t = 0; t < textures.size(); t++) {
+      auto &texture = textureArray[t];
+      texture.sampler = JenkinsHash3_("res/default");
+      texture.slotHash = JenkinsHash_(textures.at(t).slot);
+      texture.texture = textures.at(t).hash;
+    }
 
     auto &uniformBlockArray = pipeline.Data().uniformBlocks;
     auto &uniformBlock = uniformBlockArray[0];
@@ -646,7 +718,7 @@ void Process(MD2::Header &hdr, AppContext *ctx) {
         pc::MakeHash<pg::UniformBlockData>("main_uniform");
     uniformBlock.bufferObject = JenkinsHash_("ubFragmentProperties");
 
-    BinWritterRef wrh(ctx->NewFile(outFile));
+    BinWritterRef wrh(ctx->NewFile(outFile).str);
     wrh.WriteContainer(pipeline.buffer);
   }
 
@@ -731,8 +803,8 @@ void Process(MD2::Header &hdr, AppContext *ctx) {
     }
   }
 
-  outFile = ctx->workingFile.ChangeExtension2("refs");
-  BinWritterRef refWr(ctx->NewFile(outFile));
+  outFile = ctx->workingFile.ChangeExtension(".refs");
+  BinWritterRef refWr(ctx->NewFile(outFile).str);
 
   for (auto &ref : refs) {
     refWr.WriteContainer(ref);
@@ -741,7 +813,7 @@ void Process(MD2::Header &hdr, AppContext *ctx) {
 
   outFile = ctx->workingFile.ChangeExtension2(
       pc::GetClassExtension<pg::VertexArray>());
-  BinWritterRef wrh(ctx->NewFile(outFile));
+  BinWritterRef wrh(ctx->NewFile(outFile).str);
   wrh.WriteContainer(arrays.buffer);
 }
 
@@ -752,9 +824,14 @@ void AppProcessFile(AppContext *ctx) {
   rd.Seek(0);
 
   if (id == MD2::Header::ID) {
-    std::string buffer;
-    rd.ReadContainer(buffer, rd.GetSize());
-    Process(*reinterpret_cast<MD2::Header *>(buffer.data()), ctx);
+    try {
+      ctx->RequestFile(std::string(ctx->workingFile.ChangeExtension(".iqm")));
+      printwarning("IQM vaiant found, skipping MD2 processing");
+    } catch (const es::FileNotFoundError &e) {
+      std::string buffer;
+      rd.ReadContainer(buffer, rd.GetSize());
+      Process(*reinterpret_cast<MD2::Header *>(buffer.data()), ctx);
+    }
   } else {
     throw es::InvalidHeaderError(id);
   }
