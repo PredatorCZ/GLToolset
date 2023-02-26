@@ -6,6 +6,10 @@
 #define HASH_CLASS(...)                                                        \
   template <> constexpr uint32 prime::common::GetClassHash<__VA_ARGS__>() {    \
     return JenkinsHash_(#__VA_ARGS__);                                         \
+  }                                                                            \
+  template <>                                                                  \
+  constexpr std::string_view prime::common::GetClassName<__VA_ARGS__>() {      \
+    return #__VA_ARGS__;                                                       \
   }
 
 #define CLASS_EXT(...)                                                         \
@@ -26,6 +30,8 @@ template <class C> constexpr uint32 GetClassHash() { return 0; }
 template <> constexpr uint32 GetClassHash<char>() {
   return JenkinsHash_("prime::common::String");
 }
+
+template <class C> constexpr std::string_view GetClassName();
 
 union ExtString {
   uint64 raw = 0;

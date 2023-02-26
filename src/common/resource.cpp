@@ -35,7 +35,7 @@ ResourceData LoadResource(const std::string &path) {
   return data;
 }
 
-static std::map<ResourceHash, std::pair<std::string, ResourceData>> resources;
+std::map<ResourceHash, std::pair<std::string, ResourceData>> resources;
 static std::map<const void *, ResourceData *> resourceFromPtr;
 
 ResourceHash AddSimpleResource(std::string path, uint32 classHash) {
