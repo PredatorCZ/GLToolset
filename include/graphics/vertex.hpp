@@ -1,11 +1,13 @@
 #pragma once
+#include "common/aabb.hpp"
 #include "common/array.hpp"
 #include "common/resource.hpp"
 #include "vertex_type.hpp"
-#include "common/aabb.hpp"
 
 namespace prime::graphics {
-struct VertexBufferData;
+struct VertexIndexData;
+struct VertexVshData;
+struct VertexPshData;
 struct VertexAttribute;
 struct VertexBuffer;
 struct VertexArray;
@@ -15,7 +17,9 @@ struct Pipeline;
 HASH_CLASS(prime::graphics::VertexAttribute);
 HASH_CLASS(prime::graphics::VertexBuffer);
 CLASS_EXT(prime::graphics::VertexArray);
-CLASS_EXT(prime::graphics::VertexBufferData);
+CLASS_EXT(prime::graphics::VertexIndexData);
+CLASS_EXT(prime::graphics::VertexVshData);
+CLASS_EXT(prime::graphics::VertexPshData);
 
 namespace prime::graphics {
 struct VertexAttribute {

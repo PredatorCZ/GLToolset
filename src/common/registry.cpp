@@ -28,7 +28,7 @@ static const auto REGISTRY{
     BuildRegistry<char, pg::Sampler, pg::Pipeline, pg::UniformBlockData,
                   pg::Texture, pg::TextureStream<0>, pg::TextureStream<1>,
                   pg::TextureStream<2>, pg::TextureStream<3>, pg::VertexArray,
-                  pg::VertexBufferData>()};
+                  pg::VertexIndexData, pg::VertexVshData, pg::VertexPshData>()};
 
 uint32 prime::common::GetClassFromExtension(std::string_view ext) {
   prime::common::ExtString key;
