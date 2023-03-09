@@ -27,17 +27,13 @@ void IterateResources(IterFunc cb) {
           "prime::graphics::VertexPshData", "prime::common::String")};
 
   for (auto &r : resources) {
-    int numRefs = -1;
-    if (r.second.second.buffer.size() && Registry().contains(r.first.type)) {
-      numRefs = r.second.second.numRefs;
-    }
     std::string_view cls("[not registered]");
 
     if (classNames.contains(r.first.type)) {
       cls = classNames.at(r.first.type);
     }
 
-    cb(r.second.first, cls, r.first.name, numRefs,
+    cb(r.second.first, cls, r.first.name, r.second.second.numRefs,
        r.second.second.buffer.size());
   }
 }

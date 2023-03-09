@@ -8,7 +8,7 @@ const std::string &ShadersSourceDir();
 }
 
 namespace prime::common {
-static std::string workingDirectory;
+static std::vector<std::string> workingDirs;
 
 ResourceData LoadResource(const std::string &path) {
   AFileInfo fileInfo(path);
@@ -26,9 +26,18 @@ ResourceData LoadResource(const std::string &path) {
     rd.ReadContainer(data.buffer, rd.GetSize());
   };
 
-  try {
-    Load(workingDirectory);
-  } catch (const es::FileNotFoundError &) {
+  bool found = false;
+
+  for (auto &w : workingDirs) {
+    try {
+      Load(w);
+      found = true;
+      break;
+    } catch (const es::FileNotFoundError &) {
+    }
+  }
+
+  if (!found) {
     Load(prime::utils::ShadersSourceDir());
   }
 
@@ -56,7 +65,8 @@ void AddSimpleResource(ResourceData &&resource) {
   auto [item, _] = resources.insert_or_assign(
       resource.hash,
       std::pair<std::string, ResourceData>{{}, std::move(resource)});
-  resourceFromPtr.emplace(item->second.second.buffer.data(), &item->second.second);
+  resourceFromPtr.emplace(item->second.second.buffer.data(),
+                          &item->second.second);
 }
 
 void FreeResource(ResourceData &resource) {
@@ -87,7 +97,6 @@ ResourceData &LoadResource(ResourceHash hash) {
   }
 
   if (Registry().contains(hash.type)) {
-    Resource *item = reinterpret_cast<Resource *>(res.second.buffer.data());
     if (res.second.numRefs == 0) {
       Registry().at(hash.type).Process(res.second);
     }
@@ -96,7 +105,20 @@ ResourceData &LoadResource(ResourceHash hash) {
   return res.second;
 }
 
-void SetWorkingFolder(const std::string &path) { workingDirectory = path; }
-const std::string &WorkingFolder() { return workingDirectory; }
+void UnlinkResource(Resource *ptr) {
+  auto &foundRes = FindResource(ptr);
+  foundRes.numRefs--;
+
+  if (foundRes.numRefs < 1) {
+    if (Registry().contains(foundRes.hash.type)) {
+      Registry().at(foundRes.hash.type).Delete(foundRes);
+    }
+  }
+}
+
+
+void AddWorkingFolder(std::string path) {
+  workingDirs.emplace_back(std::move(path));
+}
 
 } // namespace prime::common

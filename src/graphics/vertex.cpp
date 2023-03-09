@@ -4,11 +4,16 @@
 #include <GL/glew.h>
 #include <map>
 
-namespace prime::graphics {
-static std::map<uint32, uint32> buffers;
+namespace {
+struct BufferBind {
+  uint32 index;
+  int32 numRefs;
+};
 
-void AddVertexArray(VertexArray &vtArray) {
-  common::LinkResource(vtArray.pipeline);
+static std::map<prime::common::ResourceHash, BufferBind> buffers;
+
+void AddVertexArray(prime::graphics::VertexArray &vtArray) {
+  prime::common::LinkResource(vtArray.pipeline);
   glGenVertexArrays(1, &vtArray.index);
   glBindVertexArray(vtArray.index);
   auto pipeline = vtArray.pipeline.resourcePtr;
@@ -16,16 +21,17 @@ void AddVertexArray(VertexArray &vtArray) {
   auto &attrLocations = locations.attributesLocations;
 
   for (auto &b : vtArray.buffers) {
-    if (auto found = buffers.find(b.buffer.name); !es::IsEnd(buffers, found)) {
-      glBindBuffer(b.target, found->second);
+    if (auto found = buffers.find(b.buffer); !es::IsEnd(buffers, found)) {
+      found->second.numRefs++;
+      glBindBuffer(b.target, found->second.index);
     } else {
       uint32 bId;
       glGenBuffers(1, &bId);
       glBindBuffer(b.target, bId);
-      buffers.emplace(b.buffer.name, bId);
-      auto &resData = common::LoadResource(b.buffer);
+      buffers.emplace(b.buffer, BufferBind{bId, 1});
+      auto &resData = prime::common::LoadResource(b.buffer);
       glBufferData(b.target, b.size, resData.buffer.data(), b.usage);
-      common::FreeResource(resData);
+      prime::common::FreeResource(resData);
     }
 
     for (auto &a : b.attributes) {
@@ -40,6 +46,23 @@ void AddVertexArray(VertexArray &vtArray) {
 
   glBindVertexArray(0);
 }
+
+void FreeVertexArray(prime::graphics::VertexArray &vtArray) {
+  glDeleteVertexArrays(1, &vtArray.index);
+  prime::common::UnlinkResource(vtArray.pipeline.resourcePtr);
+
+  for (auto &b : vtArray.buffers) {
+    if (auto found = buffers.find(b.buffer); !es::IsEnd(buffers, found)) {
+      if (--found->second.numRefs < 1) {
+        glDeleteBuffers(1, &found->second.index);
+        buffers.erase(found);
+      }
+    }
+  }
+}
+} // namespace
+
+namespace prime::graphics {
 uint32 ubTransforms;
 void VertexArray::BeginRender() {
   pipeline.resourcePtr->BeginRender();
@@ -69,8 +92,12 @@ template <> class prime::common::InvokeGuard<prime::graphics::VertexArray> {
           .Process =
               [](ResourceData &data) {
                 auto hdr = data.As<prime::graphics::VertexArray>();
-                prime::graphics::AddVertexArray(*hdr);
+                AddVertexArray(*hdr);
               },
-          .Delete = nullptr,
+          .Delete =
+              [](ResourceData &data) {
+                auto hdr = data.As<prime::graphics::VertexArray>();
+                FreeVertexArray(*hdr);
+              },
       });
 };

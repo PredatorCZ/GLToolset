@@ -39,6 +39,8 @@ template <class C> void LinkResource(ResourcePtr<C> &ptr) {
   resData.numRefs++;
 }
 
+void UnlinkResource(Resource *ptr);
+
 template <class C> ResourceHash MakeHash(uint32 name) {
   return ResourceHash{name, GetClassHash<C>()};
 }
@@ -70,8 +72,7 @@ struct ResourceData {
 ResourceData LoadResource(const std::string &path);
 ResourceData &FindResource(const void *address);
 
-void SetWorkingFolder(const std::string &path);
-const std::string &WorkingFolder();
+void AddWorkingFolder(std::string path);
 void FreeResource(ResourceData &resource);
 void ReplaceResource(ResourceData &oldResource, ResourceData &newResource);
 
