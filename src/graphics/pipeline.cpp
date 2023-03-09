@@ -52,7 +52,7 @@ static void CompileShader(prime::graphics::StageObject &s,
 }
 
 struct ShaderLocations : prime::graphics::BaseProgramLocations {
-  std::map<uint32, uint16> textureSlots;
+  std::map<uint32, uint16> textureLocations;
 };
 
 REFLECT(CLASS(ShaderLocations), MEMBER(inPos), MEMBER(inTangent),
@@ -92,8 +92,6 @@ ShaderLocations IntrospectShader(uint32 program) {
     ref.SetReflectedValueUInt(JenHash(std::string_view(nameData)), location);
   }
 
-  std::map<uint32, uint32> textureSlots;
-
   for (int u = 0; u < numActiveUniforms; u++) {
     glGetProgramResourceName(program, GL_UNIFORM, u, sizeof(nameData), NULL,
                              nameData);
@@ -101,15 +99,11 @@ ShaderLocations IntrospectShader(uint32 program) {
     if (auto location = glGetUniformLocation(program, nameData);
         location != -1) {
       if (std::string_view(nameData).starts_with("sm")) {
-        textureSlots.emplace(location, JenkinsHash_(nameData));
+        retVal.textureLocations.emplace(JenkinsHash_(nameData), location);
       } else {
         // printf("%u %s\n", location, nameData);
       }
     }
-  }
-
-  for (auto [_, destination] : textureSlots) {
-    retVal.textureSlots.emplace(destination, retVal.textureSlots.size());
   }
 
   return retVal;
@@ -151,13 +145,13 @@ void AddPipeline(Pipeline &pipeline) {
       static_cast<ReflectorFriend &>(static_cast<Reflector &>(ref));
 
   for (auto &t : pipeline.textureUnits) {
-    if (!introData.textureSlots.contains(t.slotHash)) {
+    if (!introData.textureLocations.contains(t.slotHash)) {
       continue;
     }
     t.sampler = LookupSampler(t.sampler);
     auto unit = LookupTexture(t.texture);
     t.texture = unit.id;
-    t.slot = introData.textureSlots.at(t.slotHash);
+    t.location = introData.textureLocations.at(t.slotHash);
     t.target = unit.target;
   }
 
@@ -194,10 +188,12 @@ void AddPipeline(Pipeline &pipeline) {
 void Pipeline::BeginRender() const {
   glUseProgram(program);
 
+  uint32 curTexture = 0;
   for (auto &t : textureUnits) {
-    glActiveTexture(GL_TEXTURE0 + t.slot);
-    glBindSampler(t.slot, t.sampler);
+    glActiveTexture(GL_TEXTURE0 + curTexture);
     glBindTexture(t.target, t.texture);
+    glBindSampler(curTexture, t.sampler);
+    glUniform1i(t.location, curTexture++);
   }
 
   glBindBufferBase(GL_UNIFORM_BUFFER, locations.ubCamera,

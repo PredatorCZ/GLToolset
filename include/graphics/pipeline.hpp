@@ -22,7 +22,7 @@ struct SampledTexture {
   uint32 texture;
   union {
     struct {
-      uint16 slot;
+      uint16 location;
       uint16 target;
     };
     uint32 slotHash;
