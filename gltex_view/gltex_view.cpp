@@ -3,8 +3,10 @@
 #include <GLFW/glfw3.h>
 
 #include "datas/binreader.hpp"
+#include "datas/binwritter.hpp"
 #include "datas/fileinfo.hpp"
 #include "datas/flags.hpp"
+#include "datas/master_printer.hpp"
 
 #include "ImGuiFileDialog.h"
 #include "imgui_impl_glfw.h"
@@ -29,15 +31,13 @@
 
 #include "common/camera.hpp"
 #include "common/resource.hpp"
-#include "datas/binwritter.hpp"
-#include "datas/master_printer.hpp"
+#include "graphics/frame_buffer.hpp"
 #include "graphics/pipeline.hpp"
+#include "graphics/post_process.hpp"
 #include "graphics/sampler.hpp"
 #include "utils/builder.hpp"
 #include "utils/fixer.hpp"
 #include "utils/resource_report.hpp"
-
-#include "frame_buffer.hpp"
 
 #include "simplecpp.h"
 
@@ -67,6 +67,11 @@ void PreloadResources() {
   pc::AddSimpleResource<char>("basics/ts_normal.frag");
 
   pc::AddSimpleResource<char>("basics/aabb_cube.frag");
+
+  pc::AddSimpleResource<char>("post_process/glow_horizontal.frag");
+  pc::AddSimpleResource<char>("post_process/glow_vertical.frag");
+  pc::AddSimpleResource<char>("post_process/combine.frag");
+  pc::AddSimpleResource<char>("basics/viewport.vert");
 
   {
     pc::AddSimpleResource<pg::Texture>("res/light");
@@ -160,6 +165,37 @@ pc::ResourceData BuildLightPipeline() {
 
   return {pc::MakeHash<pg::Pipeline>("res/light"), std::move(pipeline.buffer)};
 }
+/*
+pg::PostProcess GlowPostProcess(pg::FrameBuffer &fbo) {
+  pu::Builder<pg::Pipeline> pipeline;
+  pipeline.SetArray(pipeline.Data().stageObjects, 2);
+  auto &stageArray = pipeline.Data().stageObjects;
+
+  auto &vertObj = stageArray[0];
+  vertObj.stageType = GL_VERTEX_SHADER;
+  vertObj.object = JenkinsHash3_("basics/viewport.vert");
+
+  auto &fragObj = stageArray[1];
+  fragObj.stageType = GL_FRAGMENT_SHADER;
+  fragObj.object = JenkinsHash3_("post_process/glow.frag");
+
+  pipeline.SetArray(pipeline.Data().textureUnits, 2);
+  auto &textureArray = pipeline.Data().textureUnits;
+  {
+    auto &texture = textureArray[0];
+    texture.sampler = JenkinsHash3_("res/default");
+    texture.slotHash = JenkinsHash_("smColor");
+    texture.texture = fbo.FindTexture(pg::FrameTextureType::Color);
+  }
+  {
+    auto &texture = textureArray[1];
+    texture.sampler = JenkinsHash3_("res/default");
+    texture.slotHash = JenkinsHash_("smGlow");
+    texture.texture = fbo.FindTexture(pg::FrameTextureType::Glow);
+  }
+
+  return {pc::MakeHash<pg::Pipeline>("res/light"), std::move(pipeline.buffer)};
+}*/
 
 using MainUBType = prime::shaders::single_texture::ubFragmentProperties;
 
@@ -355,7 +391,8 @@ int main(int, char *argv[]) {
   pg::MinimumStreamIndexForDeferredLoading(-1);
 
   AFileInfo finf(argv[0]);
-  pc::SetWorkingFolder(std::string(finf.GetFolder()));
+  pc::AddWorkingFolder(std::string(finf.GetFolder()));
+  pc::AddWorkingFolder("/home/lukas/Downloads/alienarena/recompiled/");
   PreloadResources();
 
   MainUBType *mainUBData = [&] {
@@ -367,7 +404,7 @@ int main(int, char *argv[]) {
     return res.As<MainUBType>();
   }();
 
-  *mainUBData = {{0.7, 0.7, 0.7}, 1.5, 32.f};
+  *mainUBData = {{0.7, 0.7, 0.7}, 1.5, 32.f, 1.f};
 
   auto lightPipeline = [&] {
     pc::ResourceData pipelineData_ = BuildLightPipeline();
@@ -389,7 +426,39 @@ int main(int, char *argv[]) {
 
   glm::vec4 lightOrbit{1, 0, 0, 1.5};
 
-  pg::FrameBuffer frameBuffer(width, height);
+  pg::FrameBuffer canvas(pg::CreateFrameBuffer(width, height));
+  canvas.AddTexture(pg::FrameBufferTextureType::Color);
+  canvas.AddTexture(pg::FrameBufferTextureType::Glow);
+  canvas.Finalize();
+
+  pg::PostProcess ppGlowH(pg::CreatePostProcess(width, height));
+  ppGlowH.stages.emplace_back(pg::AddPostProcessStage(
+      JenkinsHash3_("post_process/glow_horizontal.frag"), canvas));
+
+  pg::PostProcess ppGlowV(pg::CreatePostProcess(width, height));
+  {
+    pg::PostProcessStage stage(pg::AddPostProcessStage(
+        JenkinsHash3_("post_process/glow_vertical.frag"), canvas));
+    stage.textures.front().id = ppGlowH.texture;
+    ppGlowV.stages.emplace_back(stage);
+  }
+
+  pg::PostProcess *ppGlow[]{
+      &ppGlowH,
+      &ppGlowV,
+  };
+
+  pg::PostProcess ppCombine(pg::CreatePostProcess(width, height));
+  {
+    pg::PostProcessStage stage(pg::AddPostProcessStage(
+        JenkinsHash3_("post_process/combine.frag"), canvas));
+    auto &bgclu = stage.uniforms.at("BGColor");
+    bgclu.data[0] = 0.2;
+    bgclu.data[1] = 0.3;
+    bgclu.data[2] = 0.3;
+    stage.textures.back().id = ppGlowV.texture;
+    ppCombine.stages.emplace_back(stage);
+  }
 
   constexpr float radius = 500;
   glm::vec3 lookAtDirection{0, 0, 1};
@@ -413,11 +482,13 @@ int main(int, char *argv[]) {
 
   bool lockedLight = false;
 
+  glEnable(GL_DEBUG_OUTPUT);
+  glDebugMessageCallback(MessageCallback, 0);
+
   glEnable(GL_CULL_FACE);
   glEnable(GL_DEPTH_TEST);
   glDepthFunc(GL_LESS);
-  glEnable(GL_DEBUG_OUTPUT);
-  glDebugMessageCallback(MessageCallback, 0);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
   using MainObject = std::variant<ModelObject, MainTexture, std::monostate>;
   MainObject mainObject(std::monostate{});
@@ -428,6 +499,7 @@ int main(int, char *argv[]) {
   bool showTS = false;
   bool showAABB = false;
   float lightScale = 0.1;
+  int renderBuffer = canvas.outTextures.size();
 
   auto LoadAsset = [&](std::string path) {
     AFileInfo assInf(path);
@@ -484,8 +556,8 @@ int main(int, char *argv[]) {
     *mainProgram->lightSpans.viewPos =
         glm::vec<3, float, glm::highp>{} * camera.transform;
 
-    glBindFramebuffer(GL_FRAMEBUFFER, frameBuffer.bufferId);
-    glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+    glBindFramebuffer(GL_FRAMEBUFFER, canvas.bufferId);
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     pc::SetCurrentCamera(cameraIndex);
 
@@ -502,18 +574,42 @@ int main(int, char *argv[]) {
       visModel->Render();
     }
 
-    glEnable(GL_BLEND);
-
     if (showAABB && visAABB) {
       glDisable(GL_DEPTH_TEST);
+      glEnable(GL_BLEND);
       visAABB->Render();
       glEnable(GL_DEPTH_TEST);
+      glDisable(GL_BLEND);
     }
 
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_BLEND);
     lightPipeline->BeginRender();
     boxObj.Render();
     glDisable(GL_BLEND);
+
+    glDisable(GL_DEPTH_TEST);
+
+    for (size_t i = 0; i < 10; i++) {
+      auto &pp = *ppGlow[i & 1];
+      glBindFramebuffer(GL_FRAMEBUFFER, pp.bufferId);
+
+      auto &stage = pp.stages.front();
+
+      stage.RenderToResult();
+
+      if (i == 0) {
+        stage.textures.front().id = ppGlow[1]->texture;
+      }
+    }
+
+    ppGlow[0]->stages.front().textures.front().id =
+        canvas.FindTexture(pg::FrameBufferTextureType::Glow);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, ppCombine.bufferId);
+    ppCombine.stages.front().RenderToResult();
+
+    glEnable(GL_DEPTH_TEST);
+
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     ImGui_ImplOpenGL3_NewFrame();
@@ -575,14 +671,20 @@ int main(int, char *argv[]) {
           width = region.x;
           height = region.y;
 
-          frameBuffer.Resize(width, height);
+          canvas.Resize(width, height);
+          ppGlowH.Resize(width, height);
+          ppGlowV.Resize(width, height);
+          ppCombine.Resize(width, height);
           glViewport(0, 0, width, height);
           UpdateProjection();
         }
 
-        ImGui::Image((ImTextureID)frameBuffer.textureId,
-                     ImGui::GetContentRegionAvail(), ImVec2(0, 1),
-                     ImVec2(1, 0));
+        uint32 texId = renderBuffer == canvas.outTextures.size()
+                           ? ppCombine.texture
+                           : canvas.outTextures.at(renderBuffer).id;
+
+        ImGui::Image((ImTextureID)texId, ImGui::GetContentRegionAvail(),
+                     ImVec2(0, 1), ImVec2(1, 0));
 
         if (ImGui::IsWindowHovered()) {
           glm::vec2 mouseDelta{io.MouseDelta.x, io.MouseDelta.y};
@@ -703,6 +805,11 @@ int main(int, char *argv[]) {
       if (showTS) {
         ImGui::SliderFloat("Normal Size", &visModel->magnitude, 0, 300);
       }
+
+      ImGui::SliderFloat("Glow Level", &mainUBData->glowLevel, 0, 10);
+      ImGui::SliderFloat("Alpha Cutoff", &mainUBData->alphaCutOff, 0, 1);
+      ImGui::SliderInt("Render Buffer", &renderBuffer, 0,
+                       canvas.outTextures.size());
     }
     ImGui::End();
 
@@ -753,13 +860,7 @@ int main(int, char *argv[]) {
           ImGui::TableNextColumn();
           ImGui::TextUnformatted(path.begin(), path.end());
           ImGui::TableNextColumn();
-
-          if (numRefs < 0) {
-            ImGui::TextUnformatted("N/A");
-          } else {
-            ImGui::Text("%u", numRefs);
-          }
-
+          ImGui::Text("%i", numRefs);
           ImGui::TableNextColumn();
           ImGui::Text("%.8X", nameHash);
           ImGui::TableNextColumn();

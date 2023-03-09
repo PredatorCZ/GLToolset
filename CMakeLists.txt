@@ -44,6 +44,8 @@ build_target(
   src/graphics/pipeline.cpp
   src/common/camera.cpp
   src/common/registry.cpp
+  src/graphics/frame_buffer.cpp
+  src/graphics/post_process.cpp
   LINKS
   precore
   simplecpp)

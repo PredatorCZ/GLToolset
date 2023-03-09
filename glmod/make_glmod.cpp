@@ -669,6 +669,7 @@ void Process(MD2::Header &hdr, AppContext *ctx) {
       refs.push_back(normalTexture);
       AddStreams(normalTexture);
       textures.emplace_back(TextureSlot{texHash, "smNormal"});
+      defBuilder.AddDefine("PS_IN_NORMAL");
     } catch (const es::FileNotFoundError &) {
     }
 
@@ -683,6 +684,7 @@ void Process(MD2::Header &hdr, AppContext *ctx) {
       refs.push_back(glowTexture);
       AddStreams(glowTexture);
       textures.emplace_back(TextureSlot{texHash, "smGlow"});
+      defBuilder.AddDefine("PS_IN_GLOW");
     } catch (const es::FileNotFoundError &) {
     }
 
