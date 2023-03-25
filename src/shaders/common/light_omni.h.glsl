@@ -35,7 +35,7 @@ uniform ubLightData {
 CPPATTR(template <size_t maxNumLights>)
 uniform ubLights {
   vec3 viewPos;
-#ifndef VS_INSTANCED
+#ifndef INSTANCED
   vec3 lightPos[maxNumLights];
   vec3 spotLightPos[maxNumLights];
   vec3 spotLightDir[maxNumLights];

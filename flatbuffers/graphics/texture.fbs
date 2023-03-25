@@ -1,0 +1,40 @@
+include "graphics/texture_flags.idl";
+include "common/resource.idl";
+
+namespace prime.graphics;
+
+struct TextureEntry {
+  target:uint16;
+  level:uint8;
+  streamIndex:uint8;
+  bufferSize:uint32;
+  bufferOffset:uint64;
+}
+
+struct TextureInfo {
+  width:uint16;
+  height:uint16;
+  depth:uint16;
+  internalFormat:uint16;
+  format:uint16;
+  type:uint16;
+  target:uint16;
+  maxLevel:uint8;
+  numDims:uint8;
+  reserved:uint8;
+  numStreams:uint8;
+  flags:TextureFlags;
+}
+
+struct TextureSwizzle {
+  mask:[int32:4];
+}
+
+table Texture {
+    meta:common.Resource(required);
+    entries:[TextureEntry](required);
+    info:TextureInfo(required);
+    swizzle:TextureSwizzle;
+}
+
+root_type Texture;

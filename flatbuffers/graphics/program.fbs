@@ -1,0 +1,13 @@
+namespace prime.graphics;
+
+struct StageObject {
+    resource:uint32;
+    object:uint32;
+    type:uint16;
+}
+
+table Program {
+    stages:[StageObject](required);
+    definitions:[string];
+    program:uint32;
+}

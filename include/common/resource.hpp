@@ -33,14 +33,6 @@ template <typename, typename = void> constexpr bool is_type_complete_v = false;
 template <typename T>
 constexpr bool is_type_complete_v<T, std::void_t<decltype(sizeof(T))>> = true;
 
-template <class C> void LinkResource(ResourcePtr<C> &ptr) {
-  auto &resData = LoadResource(ptr.resourceHash);
-  ptr.resourcePtr = resData.template As<C>();
-  resData.numRefs++;
-}
-
-void UnlinkResource(Resource *ptr);
-
 template <class C> ResourceHash MakeHash(uint32 name) {
   return ResourceHash{name, GetClassHash<C>()};
 }
@@ -91,6 +83,7 @@ template <class C> struct InvokeGuard;
 struct ResourceHandle {
   void (*Process)(ResourceData &res);
   void (*Delete)(ResourceData &res);
+  void *(*Handle)(ResourceData &res);
 };
 
 bool AddResourceHandle(uint32 hash, ResourceHandle handle);
@@ -98,5 +91,19 @@ bool AddResourceHandle(uint32 hash, ResourceHandle handle);
 template <class C> bool AddResourceHandle(ResourceHandle handle) {
   return AddResourceHandle(GetClassHash<C>(), handle);
 }
+
+void *GetResourceHandle(ResourceData &data);
+
+template <class C> C *LinkResource(ResourceHash &resourceHash) {
+  auto &resData = LoadResource(resourceHash);
+  ResourcePtr<C> mut;
+  mut.resourcePtr = static_cast<C*>(GetResourceHandle(resData));
+  resourceHash = mut.resourceHash;
+  resData.numRefs++;
+
+  return mut.resourcePtr;
+}
+
+void UnlinkResource(Resource *ptr);
 
 } // namespace prime::common

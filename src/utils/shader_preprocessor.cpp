@@ -57,7 +57,7 @@ std::string PreProcess(common::ResourceHash object, simplecpp::DUI &dui) {
   }
 
   std::ostringstream ret;
-  ret << "#version 330 core";
+  ret << "#version 450 core";
 
   for (const simplecpp::Token *tok = outputTokens.cfront(); tok;
        tok = tok->next) {
@@ -82,7 +82,7 @@ std::string PreProcess(common::ResourceHash object, simplecpp::DUI &dui) {
 }
 
 std::string PreprocessShader(uint32 object, uint16 target,
-                             std::string_view definitionBuffer) {
+                             std::span<std::string_view> definitions) {
   simplecpp::DUI dui;
   dui.defines.emplace_back("SHADER");
   dui.includePaths.emplace_back(SHADERS_SOURCE_DIR);
@@ -103,13 +103,8 @@ std::string PreprocessShader(uint32 object, uint16 target,
     throw std::runtime_error("Invalid target");
   }
 
-
-
-  while (definitionBuffer.size()) {
-    int8 len = definitionBuffer.front();
-    definitionBuffer.remove_prefix(1);
-    dui.defines.emplace_back(definitionBuffer.substr(0, len));
-    definitionBuffer.remove_prefix(len);
+  for (auto d : definitions) {
+    dui.defines.emplace_back(d);
   }
 
   return PreProcess(common::MakeHash<char>(object), dui);

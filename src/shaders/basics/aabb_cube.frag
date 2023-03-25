@@ -1,5 +1,6 @@
 in vec2 psTexCoord;
+out vec4 fragColor;
 
 void main() {
-    gl_FragColor = vec4(0, 0.7, 0.33, sin(length(psTexCoord * 2 - 1)));
+    fragColor = vec4(0, 0.7, 0.33, sin(length(psTexCoord * 2 - 1)));
 }

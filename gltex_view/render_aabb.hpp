@@ -1,76 +1,58 @@
 #pragma once
-#include "graphics/pipeline.hpp"
+#include "render_cube.hpp"
 
 struct AABBObject {
-  static inline uint32 VAOID = 0;
-  uint32 ITID = 0;
-  prime::graphics::Pipeline *pipeline;
-  prime::shaders::InstanceTransforms<1, 1> transforms{
-      .uvTransform =
+  static inline prime::graphics::ModelSingle *model = nullptr;
+
+  AABBObject(const prime::graphics::VertexArray *vtArray) {
+    if (!model) {
+      flatbuffers::FlatBufferBuilder builder;
+
+      auto stagesPtr = [&] {
+        std::vector<pg::StageObject> objects;
+        objects.emplace_back(JenkinsHash3_("basics/simple_cube.vert"), 0,
+                             GL_VERTEX_SHADER);
+        objects.emplace_back(JenkinsHash3_("basics/aabb_cube.frag"), 0,
+                             GL_FRAGMENT_SHADER);
+        return builder.CreateVectorOfStructs(objects);
+      }();
+
+      pg::ProgramBuilder pgmBuild(builder);
+      pgmBuild.add_stages(stagesPtr);
+      pgmBuild.add_program(-1);
+      auto pgmPtr = pgmBuild.Finish();
+      auto vtxPtr = builder.CreateStruct(GetCubeVertexArray());
+
+      pg::ModelRuntime runtimeDummy{};
+      pg::ModelSingleBuilder mdlBuild(builder);
+      mdlBuild.add_program(pgmPtr);
+      mdlBuild.add_runtime(&runtimeDummy);
+      mdlBuild.add_vertexArray_type(pc::ResourceVar_ptr);
+      mdlBuild.add_vertexArray(vtxPtr.Union());
+
+      prime::utils::FinishFlatBuffer(mdlBuild);
+
+      auto mdlHash = pc::MakeHash<pg::ModelSingle>("aabb_single_model");
+      pc::AddSimpleResource(pc::ResourceData{
+          mdlHash,
           {
-              {0.f, 0.f, 1.f, 1.f},
+              reinterpret_cast<const char *>(builder.GetBufferPointer()),
+              builder.GetSize(),
           },
-      .indexedModel =
-          {
-              {glm::quat{1.f, 0.f, 0.f, 0.f}, glm::vec3{}},
-          },
-      .indexedInflate =
-          {
-              {1.f, 1.f, 1.f},
-          },
-  };
-
-  AABBObject(prime::graphics::VertexArray *vtArray) {
-    if (VAOID < 1) {
-      glGenVertexArrays(1, &VAOID);
-      glBindVertexArray(VAOID);
-      pu::Builder<pg::Pipeline> pipelineRes;
-      pipelineRes.SetArray(pipelineRes.Data().stageObjects, 2);
-      auto &stageArray = pipelineRes.Data().stageObjects;
-
-      auto &vertObj = stageArray[0];
-      vertObj.stageType = GL_VERTEX_SHADER;
-      vertObj.object = JenkinsHash3_("basics/simple_cube.vert");
-
-      auto &fragObj = stageArray[1];
-      fragObj.stageType = GL_FRAGMENT_SHADER;
-      fragObj.object = JenkinsHash3_("basics/aabb_cube.frag");
-
-      auto pipelineHash = pc::MakeHash<pg::Pipeline>("main_aabb_cube_vis");
-      pc::AddSimpleResource({pipelineHash, std::move(pipelineRes.buffer)});
-      auto &res = pc::LoadResource(pipelineHash);
-      pipeline = res.As<pg::Pipeline>();
+      });
+      auto &mdlData = pc::LoadResource(mdlHash);
+      model = static_cast<pg::ModelSingle *>(pc::GetResourceHandle(mdlData));
     }
 
-    auto &locations = pipeline->locations;
+    auto vAABB = *vtArray->aabb();
+    prime::common::Transform newTM{
+        {glm::quat{1.f, 0.f, 0.f, 0.f},
+         glm::vec3{vAABB.center.x, vAABB.center.y, vAABB.center.z}},
+        {vAABB.bounds.x, vAABB.bounds.y, vAABB.bounds.z},
+    };
 
-    if (ITID < 1) {
-      transforms.indexedInflate[0] = {
-          vtArray->aabb.bounds.x,
-          vtArray->aabb.bounds.y,
-          vtArray->aabb.bounds.z,
-      };
-      transforms.indexedModel[0] = {glm::quat{1.f, 0.f, 0.f, 0.f},
-                                    glm::vec3{
-                                        vtArray->aabb.center.x,
-                                        vtArray->aabb.center.y,
-                                        vtArray->aabb.center.z,
-                                    }};
-
-      glGenBuffers(1, &ITID);
-      glBindBuffer(GL_UNIFORM_BUFFER, ITID);
-      glBufferData(GL_UNIFORM_BUFFER, sizeof(transforms), &transforms,
-                   GL_STREAM_DRAW);
-    }
-    glBindBufferBase(GL_UNIFORM_BUFFER, locations.ubInstanceTransforms, ITID);
-    glUniformBlockBinding(pipeline->program, locations.ubInstanceTransforms,
-                          locations.ubInstanceTransforms);
+    pg::UpdateTransform(*model, newTM);
   }
 
-  void Render() {
-    pipeline->BeginRender();
-    glBindVertexArray(VAOID);
-    glBindBufferBase(GL_UNIFORM_BUFFER, pipeline->locations.ubInstanceTransforms, ITID);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
-  }
+  void Render() { pg::Draw(*model); }
 };

@@ -25,11 +25,30 @@
     common::GetClassHash<std::decay_t<decltype(*this)>>(), version             \
   }
 
+#define CLASS_RESOURCE(version_, ...)                                          \
+  CLASS_EXT(__VA_ARGS__)                                                       \
+  template <>                                                                  \
+  constexpr prime::common::Resource                                            \
+  prime::common::ClassResource<__VA_ARGS__>() {                                \
+    return Resource{.hash = GetClassHash<__VA_ARGS__>(), .version = version_}; \
+  }
+
 namespace prime::common {
 template <class C> constexpr uint32 GetClassHash() { return 0; }
 template <> constexpr uint32 GetClassHash<char>() {
   return JenkinsHash_("prime::common::String");
 }
+
+struct Resource {
+  uint32 hash;
+  uint32 version;
+
+  constexpr bool operator!=(Resource o) const {
+    return hash != o.hash || version != o.version;
+  }
+};
+
+template <class C> constexpr Resource ClassResource();
 
 template <class C> constexpr std::string_view GetClassName();
 
@@ -123,9 +142,4 @@ template <class C> void ValidateClass(const C &item) {
 
 uint32 GetClassFromExtension(std::string_view ext);
 std::string_view GetExtentionFromHash(uint32 hash);
-
-struct Resource {
-  uint32 hash;
-  uint32 version;
-};
 } // namespace prime::common

@@ -1,0 +1,12 @@
+include "common/resource.idl";
+
+namespace prime.common;
+
+struct ResourcePtr_ {
+    ptr:uint64;
+}
+
+union ResourceVar {
+    hash:ResourceHash,
+    ptr:ResourcePtr_,
+}

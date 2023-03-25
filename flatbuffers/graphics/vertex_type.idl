@@ -1,0 +1,18 @@
+namespace prime.graphics;
+
+enum VertexType : uint8 {
+  Position,
+  Tangent,
+  Normal,
+  TexCoord2,
+  TexCoord40,
+  TexCoord41,
+  TexCoord42,
+}
+
+enum TSType : uint8 {
+  None,
+  Normal,
+  Matrix,
+  QTangent,
+}

@@ -1,0 +1,11 @@
+namespace prime.common;
+
+struct ResourceHash (force_align:8) {
+    name:uint32;
+    type:uint32;
+}
+
+struct Resource {
+    hash:uint32;
+    version:uint32;
+}

@@ -1,7 +1,6 @@
 #pragma once
-#include "graphics/pipeline.hpp"
+#include "program.fbs.hpp"
 #include "shader_classes.hpp"
-#include "utils/shader_preprocessor.hpp"
 #include <span>
 
 struct ubLightData {
@@ -55,21 +54,21 @@ struct MainShaderProgram {
   ubLightData lightDataSpans;
   std::string lights;
   ubLights lightSpans;
-  prime::graphics::Pipeline *pipeline;
+  uint32 ubLightsBind;
+  uint32 ubLightDataBind;
+  prime::graphics::Program *program;
 
-  MainShaderProgram(prime::graphics::Pipeline *pipeline_)
-      : pipeline(pipeline_) {
+  MainShaderProgram(prime::graphics::Program *program_) : program(program_) {
     uint32 numLights = 0;
-    std::string_view defBuffer(pipeline->definitions.begin(),
-                               pipeline->definitions.end());
 
-    const size_t found = defBuffer.find("NUM_LIGHTS=");
+    for (auto d : *program->definitions()) {
+      std::string_view ds(d->data(), d->size());
 
-    if (found != defBuffer.npos) {
-      char buf[4]{};
-      char nsize = defBuffer.at(found - 1);
-      memcpy(buf, defBuffer.data() + found + 11, nsize - 11);
-      numLights = std::atol(buf);
+      if (ds.starts_with("NUM_LIGHTS=")) {
+        char buf[4]{};
+        memcpy(buf, ds.data() + 11, ds.size() - 11);
+        numLights = std::atol(buf);
+      }
     }
 
     lightData.resize(ubLightData::BufferSize(numLights));
@@ -81,12 +80,10 @@ struct MainShaderProgram {
     lights.resize(ubLights::BufferSize(numLights));
     lightSpans.FromBuffer(lights, numLights);
 
-    auto &locations = pipeline->locations;
+    auto &intro = prime::graphics::ProgramIntrospect(program->program());
 
-    glUniformBlockBinding(pipeline->program, locations.ubLights,
-                          locations.ubLights);
-    glUniformBlockBinding(pipeline->program, locations.ubLightData,
-                          locations.ubLightData);
+    ubLightsBind = intro.uniformBlockBinds.at("ubLights");
+    ubLightDataBind = intro.uniformBlockBinds.at("ubLightData");
 
     if (LUB < 1) {
       glGenBuffers(1, &LUB);
@@ -104,10 +101,10 @@ struct MainShaderProgram {
   }
 
   void UseProgram() {
-    glBindBufferBase(GL_UNIFORM_BUFFER, pipeline->locations.ubLights, LUB);
+    glBindBufferBase(GL_UNIFORM_BUFFER, ubLightsBind, LUB);
     glBindBuffer(GL_UNIFORM_BUFFER, LUB);
     glBufferSubData(GL_UNIFORM_BUFFER, 0, lights.size(), lights.data());
-    glBindBufferBase(GL_UNIFORM_BUFFER, pipeline->locations.ubLightData, LDUB);
+    glBindBufferBase(GL_UNIFORM_BUFFER, ubLightDataBind, LDUB);
     glBindBuffer(GL_UNIFORM_BUFFER, LDUB);
     glBufferSubData(GL_UNIFORM_BUFFER, 0, lightData.size(), lightData.data());
   }

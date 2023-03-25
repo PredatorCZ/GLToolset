@@ -22,7 +22,6 @@ struct PostProcessStage {
   uint32 program;
 
   void RenderToResult() const;
-  void Resize(uint32 width, uint32 height);
 };
 
 struct PostProcess {

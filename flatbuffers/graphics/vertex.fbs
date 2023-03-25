@@ -1,0 +1,39 @@
+include "graphics/vertex_type.idl";
+include "common/aabb.idl";
+include "common/resource.idl";
+include "common/transform.idl";
+
+namespace prime.graphics;
+
+struct VertexAttribute {
+  slot:VertexType;
+  size:uint8;
+  type:uint16;
+  normalized:bool;
+  offset:uint8;
+}
+
+table VertexBuffer {
+  attributes:[VertexAttribute];
+  buffer:common.ResourceHash;
+  size:uint32;
+  target:uint16;
+  usage:uint16;
+  stride:uint8;
+}
+
+table VertexArray {
+  meta:common.Resource(required);
+  buffers:[VertexBuffer];
+  transforms:[common.Transform];
+  uvTransforms:[glm.vec4];
+  uvTransformRemaps:[int8];
+  aabb:common.AABB;
+  index:uint32;
+  count:uint32;
+  mode:uint16;
+  type:uint16;
+  tsType:TSType;
+}
+
+root_type VertexArray;

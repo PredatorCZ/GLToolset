@@ -1,0 +1,8 @@
+include "common/math.idl";
+
+namespace prime.common;
+
+struct Transform {
+    tm:glm.dualquat;
+    inflate:glm.vec3;
+}

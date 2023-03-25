@@ -1,0 +1,21 @@
+struct Vector4A16 (force_align:16) {
+    x:float;
+    y:float;
+    z:float;
+    w:float;
+}
+
+namespace glm;
+
+struct dualquat {
+    real:Vector4A16;
+    dual:Vector4A16;
+}
+
+struct vec3 {
+    d_:Vector4A16;
+}
+
+struct vec4 {
+    d_:Vector4A16;
+}

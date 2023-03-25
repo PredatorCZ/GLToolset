@@ -1,4 +1,5 @@
-#include "graphics/pipeline.hpp"
+#include "graphics/model_single.hpp"
+#include "graphics/program.hpp"
 #include "graphics/sampler.hpp"
 #include "graphics/texture.hpp"
 #include "graphics/vertex.hpp"
@@ -25,7 +26,7 @@ template <class... C> auto BuildRegistry() {
 namespace pg = prime::graphics;
 
 static const auto REGISTRY{
-    BuildRegistry<char, pg::Sampler, pg::Pipeline, pg::UniformBlockData,
+    BuildRegistry<char, pg::Sampler, pg::ModelSingle, pg::UniformBlockData,
                   pg::Texture, pg::TextureStream<0>, pg::TextureStream<1>,
                   pg::TextureStream<2>, pg::TextureStream<3>, pg::VertexArray,
                   pg::VertexIndexData, pg::VertexVshData, pg::VertexPshData>()};

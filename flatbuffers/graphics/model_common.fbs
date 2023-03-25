@@ -1,0 +1,33 @@
+include "common/resource.idl";
+
+namespace prime.graphics;
+
+struct SampledTexture {
+    texture:uint32;
+    slot:uint32;
+    sampler:uint32;
+    target:uint16 = 0;
+    location:uint16 = 0;
+}
+
+struct UniformBlock {
+  data:common.ResourceHash;
+  bufferSlot:uint32;
+  bufferIndex:uint32 = 0;
+  bindIndex:uint32 = 0;
+  dataSize:uint32 = 0;
+}
+
+struct UniformValue {
+    name:uint32;
+    location:uint16;
+    size:uint8;
+    data:[float:4];
+}
+
+struct ModelRuntime {
+  transformBuffer:uint32;
+  transformIndex:uint16;
+  numTransforms:uint16;
+  numUVTransforms:uint8;
+}

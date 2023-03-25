@@ -5,11 +5,11 @@
 // TS_TANGENT_ATTR: Use tangent attribute
 
 #ifdef TS_NORMAL_ATTR
-in vec3 inNormal;
+layout(location = 2) in vec3 inNormal;
 #endif
 
 #ifdef TS_TANGENT_ATTR
-in vec4 inTangent;
+layout(location = 1) in vec4 inTangent;
 #endif
 
 #ifdef TS_QUAT

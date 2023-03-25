@@ -87,6 +87,14 @@ bool AddResourceHandle(uint32 hash, ResourceHandle handle) {
   return Registry().emplace(hash, handle).second;
 }
 
+void *GetResourceHandle(ResourceData &data) {
+  if (Registry().contains(data.hash.type)) {
+    return Registry().at(data.hash.type).Handle(data);
+  }
+
+  return data.buffer.data();
+}
+
 ResourceData &LoadResource(ResourceHash hash) {
   auto &res = resources.at(hash);
   auto &[fileName, resource] = res;
@@ -115,7 +123,6 @@ void UnlinkResource(Resource *ptr) {
     }
   }
 }
-
 
 void AddWorkingFolder(std::string path) {
   workingDirs.emplace_back(std::move(path));

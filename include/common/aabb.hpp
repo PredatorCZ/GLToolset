@@ -1,3 +1,4 @@
+#pragma once
 #include "datas/vectors_simd.hpp"
 
 namespace prime::common {

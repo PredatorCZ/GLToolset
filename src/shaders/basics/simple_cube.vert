@@ -6,7 +6,7 @@ const vec4 tangents[numVertices] = vec4[numVertices](vec4(1E-25, -0, -0.707107, 
 out vec2 psTexCoord;
 
 void main() {
-    vec3 modelSpace = GetModelSpace(positions[gl_VertexID]);
+    vec3 modelSpace = GetModelSpace(vec4(positions[gl_VertexID], 0));
 #ifdef TS_TANGENT_ATTR
     tsTangent_ = tangents[gl_VertexID];
 #endif

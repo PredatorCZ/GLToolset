@@ -1,4 +1,4 @@
-uniform vec4 localPos;
+uniform vec4 v4localPos;
 out vec2 psTexCoord;
 
 const vec4 vertices[6] = vec4[6](
@@ -12,6 +12,6 @@ const vec4 vertices[6] = vec4[6](
 
 void main() {
     vec4 curVert = vertices[gl_VertexID];
-    gl_Position = projection * (vec4(DQTransformPoint(view, localPos.xyz), 1.0) + vec4(curVert.xy, 0, 0) * localPos.w);
+    gl_Position = projection * (vec4(DQTransformPoint(view, v4localPos.xyz), 1.0) + vec4(curVert.xy, 0, 0) * v4localPos.w);
     psTexCoord = curVert.zw;
 }

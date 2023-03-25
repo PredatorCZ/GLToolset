@@ -32,14 +32,16 @@
 #include <GL/gl.h>
 #include <GL/glext.h>
 
-#include "graphics/pipeline.hpp"
-#include "graphics/texture.hpp"
-#include "graphics/vertex.hpp"
-#include "shader_classes.hpp"
-#include "utils/builder.hpp"
+#include "utils/flatbuffers.hpp"
+#include "utils/instancetm_builder.hpp"
 #include "utils/shader_preprocessor.hpp"
 
 #include "glm/ext.hpp"
+#include "program.fbs.hpp"
+#include "texture.fbs.hpp"
+#include "vertex.fbs.hpp"
+
+#include "model_single.fbs.hpp"
 
 std::string_view filters[]{
     ".md2$",
@@ -600,19 +602,91 @@ void Process(MD2::Header &hdr, AppContext *ctx) {
     }
   }
 
-  // Create pipeline
-  auto ppeHash = pc::MakeHash<pg::Pipeline>(outPath.GetFullPathNoExt());
-  outFile = outPath.ChangeExtension2(pc::GetClassExtension<pg::Pipeline>());
-  refs.push_back(outFile);
-
+  // Create vertex arrays
+  auto vayHash = pc::MakeHash<pg::VertexArray>(outPath.GetFullPathNoExt());
   {
-    prime::utils::DefineBuilder defBuilder;
-    defBuilder.AddDefine("TS_TANGENT_ATTR");
-    defBuilder.AddDefine("TS_QUAT");
-    defBuilder.AddDefine("NUM_LIGHTS=6");
-    defBuilder.AddDefine("TS_NORMAL_DERIVE_Z");
-    defBuilder.AddDefine("VS_POSTYPE=vec3");
-    defBuilder.AddDefine("VS_NUMUVS2=1");
+    outFile =
+        outPath.ChangeExtension2(pc::GetClassExtension<pg::VertexArray>());
+    refs.push_back(outFile);
+    flatbuffers::FlatBufferBuilder builder(1024);
+    std::vector<flatbuffers::Offset<pg::VertexBuffer>> buffers;
+
+    {
+      std::vector<pg::VertexAttribute> attrs;
+      attrs.emplace_back(pg::VertexType::Position, 3, GL_UNSIGNED_BYTE, false,
+                         0);
+      buffers.emplace_back(pg::CreateVertexBuffer(
+          builder, builder.CreateVectorOfStructs(attrs), &posHash,
+          4 * oVertices.size(), GL_ARRAY_BUFFER, GL_STATIC_DRAW, 4));
+    }
+
+    {
+      std::vector<pg::VertexAttribute> attrs;
+      attrs.emplace_back(pg::VertexType::Tangent, 4, GL_SHORT, true, 0);
+      attrs.emplace_back(pg::VertexType::TexCoord2, 2, GL_UNSIGNED_SHORT, false,
+                         8);
+      buffers.emplace_back(pg::CreateVertexBuffer(
+          builder, builder.CreateVectorOfStructs(attrs), &pixelHash,
+          12 * oVertices.size(), GL_ARRAY_BUFFER, GL_STATIC_DRAW, 12));
+    }
+
+    buffers.emplace_back(
+        pg::CreateVertexBuffer(builder, 0, &indicesHash, 2 * indices.size(),
+                               GL_ELEMENT_ARRAY_BUFFER, GL_STATIC_DRAW, 0));
+
+    auto buffersPtr = builder.CreateVector(buffers);
+
+    std::vector<pc::Transform> transforms;
+    transforms.emplace_back(pc::Transform{
+        .tm =
+            {
+                {1, 0, 0, 0},
+                {frame->offset.x, frame->offset.y, frame->offset.z},
+            },
+        .inflate = {frame->scale.x, frame->scale.y, frame->scale.z},
+    });
+
+    auto tmsPtr = builder.CreateVectorOfStructs(transforms);
+
+    std::vector<glm::vec4> uvTransforms;
+    uvMax -= uvMin;
+    uvMax *= 1.f / 0xffff;
+    uvTransforms.emplace_back(uvMin.x, uvMin.y, uvMax.x, uvMax.y);
+
+    auto uvtmsPtr = builder.CreateVectorOfStructs(uvTransforms);
+    const int8_t uvRemaps[]{0};
+    auto uvRemapsPtr = builder.CreateVector(uvRemaps, sizeof(uvRemaps));
+
+    pg::VertexArrayBuilder varBuild(builder);
+    varBuild.add_buffers(buffersPtr);
+    varBuild.add_transforms(tmsPtr);
+    varBuild.add_uvTransforms(uvtmsPtr);
+    varBuild.add_count(indices.size());
+    varBuild.add_mode(GL_TRIANGLES);
+    varBuild.add_type(GL_UNSIGNED_SHORT);
+    varBuild.add_uvTransformRemaps(uvRemapsPtr);
+    varBuild.add_index(-1);
+    varBuild.add_tsType(pg::TSType::QTangent);
+    pc::AABB aabb_{
+        .center = (uData.max + uData.min) / 2,
+        .bounds = uData.max,
+    };
+    aabb_.bounds -= aabb_.center;
+    aabb_.bounds.w =
+        std::max(std::max(aabb_.bounds.x, aabb_.bounds.y), aabb_.bounds.z);
+
+    varBuild.add_aabb(&aabb_);
+
+    prime::utils::FinishFlatBuffer(varBuild);
+
+    BinWritterRef wrh(ctx->NewFile(outFile).str);
+    wrh.WriteBuffer(reinterpret_cast<char *>(builder.GetBufferPointer()),
+                    builder.GetSize());
+  }
+
+  // Create single model
+  {
+    flatbuffers::FlatBufferBuilder builder(1024);
 
     AFileInfo textureFile(hdr.skins->path);
     AFileInfo newBranch(textureFile.CatchBranch(outFile));
@@ -633,9 +707,10 @@ void Process(MD2::Header &hdr, AppContext *ctx) {
       try {
         auto texStream = ctx->RequestFile(outDir + mainPath);
         BinReaderRef txrd(*texStream.Get());
-        pg::Texture txHdr;
-        txrd.Read(txHdr);
-        numStreams = txHdr.numStreams;
+        std::string txBuffer;
+        txrd.ReadContainer(txBuffer, txrd.GetSize());
+        auto txHdr = prime::utils::GetFlatbuffer<pg::Texture>(txBuffer);
+        numStreams = txHdr->info()->numStreams();
       } catch (...) {
       }
 
@@ -658,6 +733,11 @@ void Process(MD2::Header &hdr, AppContext *ctx) {
       textures.emplace_back(TextureSlot{texHash, "smAlbedo"});
     }
 
+    std::vector<std::string_view> defines({
+        /**/ //
+        "NUM_LIGHTS=6",
+    });
+
     try {
       ctx->FindFile(outDir + std::string(newBranch.GetFolder()),
                     "^" + std::string(newBranch.GetFilename()) + "_normal." +
@@ -669,7 +749,7 @@ void Process(MD2::Header &hdr, AppContext *ctx) {
       refs.push_back(normalTexture);
       AddStreams(normalTexture);
       textures.emplace_back(TextureSlot{texHash, "smNormal"});
-      defBuilder.AddDefine("PS_IN_NORMAL");
+      defines.emplace_back("PS_IN_NORMAL");
     } catch (const es::FileNotFoundError &) {
     }
 
@@ -684,125 +764,70 @@ void Process(MD2::Header &hdr, AppContext *ctx) {
       refs.push_back(glowTexture);
       AddStreams(glowTexture);
       textures.emplace_back(TextureSlot{texHash, "smGlow"});
-      defBuilder.AddDefine("PS_IN_GLOW");
+      defines.emplace_back("PS_IN_GLOW");
     } catch (const es::FileNotFoundError &) {
     }
 
-    prime::utils::Builder<pg::Pipeline> pipeline;
-    pipeline.SetArray(pipeline.Data().stageObjects, 2);
-    pipeline.SetArray(pipeline.Data().uniformBlocks, 1);
-    pipeline.SetArray(pipeline.Data().textureUnits, textures.size());
-    pipeline.SetArray(pipeline.Data().definitions, defBuilder.buffer.size());
-    memcpy(pipeline.Data().definitions.begin(), defBuilder.buffer.data(),
-           defBuilder.buffer.size());
+    auto definesPtr = [&] {
+      std::vector<flatbuffers::Offset<flatbuffers::String>> offsets;
+      for (auto s : defines) {
+        offsets.emplace_back(builder.CreateString(s));
+      }
+      return builder.CreateVector(offsets);
+    }();
 
-    auto &stageArray = pipeline.Data().stageObjects;
-    auto &vertObj = stageArray[0];
-    vertObj.stageType = GL_VERTEX_SHADER;
-    vertObj.object = JenkinsHash3_("simple_model/main.vert");
+    auto stagesPtr = [&] {
+      std::vector<pg::StageObject> objects;
+      objects.emplace_back(JenkinsHash3_("simple_model/main.vert"), 0,
+                           GL_VERTEX_SHADER);
+      objects.emplace_back(JenkinsHash3_("simple_model/main.frag"), 0,
+                           GL_FRAGMENT_SHADER);
+      return builder.CreateVectorOfStructs(objects);
+    }();
 
-    auto &fragObj = stageArray[1];
-    fragObj.stageType = GL_FRAGMENT_SHADER;
-    fragObj.object = JenkinsHash3_("simple_model/main.frag");
+    pg::ProgramBuilder pgmBuilder(builder);
+    pgmBuilder.add_definitions(definesPtr);
+    pgmBuilder.add_stages(stagesPtr);
+    pgmBuilder.add_program(-1);
+    auto pgmPtr = pgmBuilder.Finish();
 
-    auto &textureArray = pipeline.Data().textureUnits;
+    auto texturesPtr = [&] {
+      std::vector<pg::SampledTexture> textures_;
 
-    for (size_t t = 0; t < textures.size(); t++) {
-      auto &texture = textureArray[t];
-      texture.sampler = JenkinsHash3_("res/default");
-      texture.slotHash = JenkinsHash_(textures.at(t).slot);
-      texture.texture = textures.at(t).hash;
-    }
+      for (auto &t : textures) {
+        textures_.emplace_back(t.hash, JenkinsHash_(t.slot),
+                               JenkinsHash3_("res/default"), 0, 0);
+      }
 
-    auto &uniformBlockArray = pipeline.Data().uniformBlocks;
-    auto &uniformBlock = uniformBlockArray[0];
-    uniformBlock.data.resourceHash =
-        pc::MakeHash<pg::UniformBlockData>("main_uniform");
-    uniformBlock.bufferObject = JenkinsHash_("ubFragmentProperties");
+      return builder.CreateVectorOfStructs(textures_);
+    }();
 
+    auto uniBlocksPtr = [&] {
+      std::vector<pg::UniformBlock> ublocks;
+      ublocks.emplace_back(pc::MakeHash<pg::UniformBlockData>("main_uniform"),
+                           JenkinsHash_("ubFragmentProperties"), 0, 0, 0);
+
+      return builder.CreateVectorOfStructs(ublocks);
+    }();
+
+    auto vayPtr = builder.CreateStruct(vayHash);
+    pg::ModelRuntime runtimeDummy{};
+
+    pg::ModelSingleBuilder mdlBuilder(builder);
+    mdlBuilder.add_program(pgmPtr);
+    mdlBuilder.add_textures(texturesPtr);
+    mdlBuilder.add_uniformBlocks(uniBlocksPtr);
+    mdlBuilder.add_runtime(&runtimeDummy);
+    mdlBuilder.add_vertexArray_type(pc::ResourceVar::ResourceVar_hash);
+    mdlBuilder.add_vertexArray(vayPtr.Union());
+
+    prime::utils::FinishFlatBuffer(mdlBuilder);
+
+    outFile = ctx->workingFile.ChangeExtension2(
+        pc::GetClassExtension<pg::ModelSingle>());
     BinWritterRef wrh(ctx->NewFile(outFile).str);
-    wrh.WriteContainer(pipeline.buffer);
-  }
-
-  // Create vertex arrays
-  prime::shaders::InstanceTransforms<1, 1> tm;
-  tm.indexedModel[0] = {{1, 0, 0, 0},
-                        {frame->offset.x, frame->offset.y, frame->offset.z}};
-  tm.indexedInflate[0] = {frame->scale.x, frame->scale.y, frame->scale.z};
-  uvMax -= uvMin;
-  uvMax *= 1.f / 0xffff;
-  tm.uvTransform[0] = {uvMin.x, uvMin.y, uvMax.x, uvMax.y};
-
-  prime::utils::Builder<pg::VertexArray> arrays;
-  {
-    arrays.SetArray(arrays.Data().transformData, sizeof(tm));
-    arrays.SetArray(arrays.Data().buffers, 3);
-
-    {
-      auto &vData = arrays.Data();
-      vData.maxNumIndexedTransforms = 1;
-      vData.maxNumUVs = 1;
-      vData.count = indices.size();
-      vData.mode = GL_TRIANGLES;
-      vData.type = GL_UNSIGNED_SHORT;
-      vData.pipeline.resourceHash = ppeHash;
-      vData.aabb.center = (uData.max + uData.min) / 2;
-      vData.aabb.bounds = uData.max - vData.aabb.center;
-      vData.aabb.bounds.w =
-          std::max(std::max(vData.aabb.bounds.x, vData.aabb.bounds.y),
-                   vData.aabb.bounds.z);
-
-      memcpy(vData.transformData.begin(), &tm, sizeof(tm));
-    }
-    {
-      {
-        auto &b0 = arrays.Data().buffers[0];
-        b0.size = 4 * oVertices.size();
-        b0.stride = 4;
-        b0.target = GL_ARRAY_BUFFER;
-        b0.usage = GL_STATIC_DRAW;
-        b0.buffer = posHash;
-        arrays.SetArray(b0.attributes, 1);
-      }
-      auto &b0a = arrays.Data().buffers[0].attributes[0];
-      b0a.slot = pg::VertexType::Position;
-      b0a.normalized = false;
-      b0a.offset = 0;
-      b0a.size = 3;
-      b0a.type = GL_UNSIGNED_BYTE;
-    }
-    {
-      {
-        auto &b1 = arrays.Data().buffers[1];
-        b1.size = 12 * oVertices.size();
-        b1.stride = 12;
-        b1.target = GL_ARRAY_BUFFER;
-        b1.usage = GL_STATIC_DRAW;
-        b1.buffer = pixelHash;
-        arrays.SetArray(b1.attributes, 2);
-      }
-      auto &b1a = arrays.Data().buffers[1].attributes[0];
-      b1a.slot = pg::VertexType::Tangent;
-      b1a.normalized = true;
-      b1a.offset = 0;
-      b1a.size = 4;
-      b1a.type = GL_SHORT;
-
-      auto &b1b = arrays.Data().buffers[1].attributes[1];
-      b1b.slot = pg::VertexType::TexCoord2;
-      b1b.normalized = false;
-      b1b.offset = 8;
-      b1b.size = 2;
-      b1b.type = GL_UNSIGNED_SHORT;
-    }
-    {
-      auto &b2 = arrays.Data().buffers[2];
-      b2.size = 2 * indices.size();
-      b2.stride = 0;
-      b2.target = GL_ELEMENT_ARRAY_BUFFER;
-      b2.usage = GL_STATIC_DRAW;
-      b2.buffer = indicesHash;
-    }
+    wrh.WriteBuffer(reinterpret_cast<char *>(builder.GetBufferPointer()),
+                    builder.GetSize());
   }
 
   outFile = ctx->workingFile.ChangeExtension(".refs");
@@ -812,11 +837,6 @@ void Process(MD2::Header &hdr, AppContext *ctx) {
     refWr.WriteContainer(ref);
     refWr.Write('\n');
   }
-
-  outFile = ctx->workingFile.ChangeExtension2(
-      pc::GetClassExtension<pg::VertexArray>());
-  BinWritterRef wrh(ctx->NewFile(outFile).str);
-  wrh.WriteContainer(arrays.buffer);
 }
 
 void AppProcessFile(AppContext *ctx) {

@@ -1,6 +1,6 @@
 #include "light_omni.h.glsl"
 
-#ifdef VS_INSTANCED
+#ifdef INSTANCED
 in vec3 lightPos[maxNumLights];
 in vec3 spotLightPos[maxNumLights];
 in vec3 spotLightDir[maxNumLights];

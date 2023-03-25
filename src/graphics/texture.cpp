@@ -1,14 +1,17 @@
 #include "graphics/texture.hpp"
 #include "common/resource.hpp"
+#include "utils/flatbuffers.hpp"
 #include <GL/glew.h>
 #include <deque>
 #include <functional>
 #include <map>
 
+#include "texture.fbs.hpp"
+
 using namespace prime::graphics;
 
 struct DeferredPayload {
-  prime::graphics::Texture &hdr;
+  const prime::graphics::Texture &hdr;
   uint32 hash;
   uint32 object;
   uint32 streamIndex = 0;
@@ -40,168 +43,174 @@ prime::graphics::RedirectTexture(prime::common::ResourceHash tex,
 
 static void LoadBindedTextureLevels(DeferredPayload pl) {
   auto &hdr = pl.hdr;
-  auto resource = RedirectTexture(prime::common::ResourceHash(pl.hash), pl.streamIndex);
+  auto resource =
+      RedirectTexture(prime::common::ResourceHash(pl.hash), pl.streamIndex);
   auto &data = prime::common::LoadResource(resource);
   uint8 minLevel = 255;
+  auto &meta = *hdr.info();
 
-  glBindTexture(hdr.target, pl.object);
+  glBindTexture(meta.target(), pl.object);
 
-  if (hdr.flags == TextureFlag::Compressed) {
-    if (hdr.flags == TextureFlag::Volume) {
+  if (meta.flags() == TextureFlag::Compressed) {
+    if (meta.flags() == TextureFlag::Volume) {
       // not implemented
-    } else if (hdr.flags == TextureFlag::Array) {
+    } else if (meta.flags() == TextureFlag::Array) {
       // not implemented
     } else {
-      if (hdr.numDims == 1) {
-        for (auto &e : hdr.entries) {
-          uint32 width = hdr.width >> e.level;
+      if (meta.numDims() == 1) {
+        for (auto e : *hdr.entries()) {
+          // uint32 width = meta.width() >> e->level();
 
-          if (e.streamIndex != pl.streamIndex) {
+          if (e->streamIndex() != pl.streamIndex) {
             continue;
           }
 
-          minLevel = std::min(e.level, minLevel);
+          minLevel = std::min(e->level(), minLevel);
         }
-      } else if (hdr.numDims == 2) {
-        for (auto &e : hdr.entries) {
-          uint32 height = hdr.height >> e.level;
-          uint32 width = hdr.width >> e.level;
+      } else if (meta.numDims() == 2) {
+        for (auto e : *hdr.entries()) {
+          uint32 height = meta.height() >> e->level();
+          uint32 width = meta.width() >> e->level();
 
           if (std::max(height, width) >= CLAMP_RES ||
-              e.streamIndex != pl.streamIndex) {
+              e->streamIndex() != pl.streamIndex) {
             continue;
           }
 
-          minLevel = std::min(e.level, minLevel);
+          minLevel = std::min(e->level(), minLevel);
         }
       }
     }
   } else {
-    if (hdr.flags == TextureFlag::Volume) {
+    if (meta.flags() == TextureFlag::Volume) {
       // not implemented
-    } else if (hdr.flags == TextureFlag::Array) {
+    } else if (meta.flags() == TextureFlag::Array) {
       // not implemented
     } else {
-      if (hdr.numDims == 1) {
-        for (auto &e : hdr.entries) {
-          uint32 width = hdr.width >> e.level;
+      if (meta.numDims() == 1) {
+        for (auto e : *hdr.entries()) {
+          // uint32 width = meta.width() >> e->level();
 
-          if (e.streamIndex != pl.streamIndex) {
+          if (e->streamIndex() != pl.streamIndex) {
             continue;
           }
 
-          minLevel = std::min(e.level, minLevel);
+          minLevel = std::min(e->level(), minLevel);
         }
-      } else if (hdr.numDims == 2) {
-        for (auto &e : hdr.entries) {
-          uint32 height = hdr.height >> e.level;
-          uint32 width = hdr.width >> e.level;
+      } else if (meta.numDims() == 2) {
+        for (auto e : *hdr.entries()) {
+          uint32 height = meta.height() >> e->level();
+          uint32 width = meta.width() >> e->level();
 
           if (std::max(height, width) >= CLAMP_RES ||
-              e.streamIndex != pl.streamIndex) {
+              e->streamIndex() != pl.streamIndex) {
             continue;
           }
 
-          minLevel = std::min(e.level, minLevel);
+          minLevel = std::min(e->level(), minLevel);
         }
       }
     }
   }
 
-  glTexParameteri(hdr.target, GL_TEXTURE_BASE_LEVEL, minLevel);
-  glTexParameteri(hdr.target, GL_TEXTURE_MAX_LEVEL, hdr.maxLevel);
+  glTexParameteri(meta.target(), GL_TEXTURE_BASE_LEVEL, minLevel);
+  glTexParameteri(meta.target(), GL_TEXTURE_MAX_LEVEL, meta.maxLevel());
 
-  if (hdr.flags == TextureFlag::Compressed) {
-    if (hdr.flags == TextureFlag::Volume) {
+  if (meta.flags() == TextureFlag::Compressed) {
+    if (meta.flags() == TextureFlag::Volume) {
       // not implemented
-    } else if (hdr.flags == TextureFlag::Array) {
+    } else if (meta.flags() == TextureFlag::Array) {
       // not implemented
     } else {
-      if (hdr.numDims == 1) {
-        for (auto &e : hdr.entries) {
-          uint32 width = hdr.width >> e.level;
+      if (meta.numDims() == 1) {
+        for (auto e : *hdr.entries()) {
+          uint32 width = meta.width() >> e->level();
 
-          if (e.streamIndex != pl.streamIndex) {
+          if (e->streamIndex() != pl.streamIndex) {
             continue;
           }
 
-          glCompressedTexImage1D(e.target, e.level, hdr.internalFormat, width,
-                                 0, e.bufferSize,
-                                 data.buffer.data() + e.bufferOffset);
+          glCompressedTexImage1D(e->target(), e->level(), meta.internalFormat(),
+                                 width, 0, e->bufferSize(),
+                                 data.buffer.data() + e->bufferOffset());
         }
-      } else if (hdr.numDims == 2) {
-        for (auto &e : hdr.entries) {
-          uint32 height = hdr.height >> e.level;
-          uint32 width = hdr.width >> e.level;
+      } else if (meta.numDims() == 2) {
+        for (auto e : *hdr.entries()) {
+          uint32 height = meta.height() >> e->level();
+          uint32 width = meta.width() >> e->level();
 
           if (std::max(height, width) >= CLAMP_RES ||
-              e.streamIndex != pl.streamIndex) {
+              e->streamIndex() != pl.streamIndex) {
             continue;
           }
 
-          glCompressedTexImage2D(e.target, e.level, hdr.internalFormat, width,
-                                 height, 0, e.bufferSize,
-                                 data.buffer.data() + e.bufferOffset);
+          glCompressedTexImage2D(e->target(), e->level(), meta.internalFormat(),
+                                 width, height, 0, e->bufferSize(),
+                                 data.buffer.data() + e->bufferOffset());
         }
       }
     }
   } else {
-    if (hdr.flags == TextureFlag::Volume) {
+    if (meta.flags() == TextureFlag::Volume) {
       // not implemented
-    } else if (hdr.flags == TextureFlag::Array) {
+    } else if (meta.flags() == TextureFlag::Array) {
       // not implemented
     } else {
-      if (hdr.numDims == 1) {
-        for (auto &e : hdr.entries) {
-          uint32 width = hdr.width >> e.level;
+      if (meta.numDims() == 1) {
+        for (auto e : *hdr.entries()) {
+          uint32 width = meta.width() >> e->level();
 
-          if (e.streamIndex != pl.streamIndex) {
+          if (e->streamIndex() != pl.streamIndex) {
             continue;
           }
 
-          glTexImage1D(e.target, e.level, hdr.internalFormat, width, 0,
-                       hdr.format, hdr.type,
-                       data.buffer.data() + e.bufferOffset);
+          glTexImage1D(e->target(), e->level(), meta.internalFormat(), width, 0,
+                       meta.format(), meta.type(),
+                       data.buffer.data() + e->bufferOffset());
         }
-      } else if (hdr.numDims == 2) {
-        for (auto &e : hdr.entries) {
-          uint32 height = hdr.height >> e.level;
-          uint32 width = hdr.width >> e.level;
+      } else if (meta.numDims() == 2) {
+        for (auto e : *hdr.entries()) {
+          uint32 height = meta.height() >> e->level();
+          uint32 width = meta.width() >> e->level();
 
           if (std::max(height, width) >= CLAMP_RES ||
-              e.streamIndex != pl.streamIndex) {
+              e->streamIndex() != pl.streamIndex) {
             continue;
           }
 
-          glTexImage2D(e.target, e.level, hdr.internalFormat, width, height, 0,
-                       hdr.format, hdr.type,
-                       data.buffer.data() + e.bufferOffset);
+          glTexImage2D(e->target(), e->level(), meta.internalFormat(), width,
+                       height, 0, meta.format(), meta.type(),
+                       data.buffer.data() + e->bufferOffset());
         }
       }
     }
   }
 
-  glBindTexture(hdr.target, 0);
+  glBindTexture(meta.target(), 0);
   prime::common::FreeResource(data);
 
-  if (hdr.numStreams == pl.streamIndex + 1) {
-    auto &hdrData = prime::common::FindResource(&hdr);
+  if (meta.numStreams() == pl.streamIndex + 1) {
+    auto &hdrData = prime::common::FindResource(
+        flatbuffers::GetBufferStartFromRootPointer(&pl.hdr));
     prime::common::FreeResource(hdrData);
   }
 };
 
-static TextureUnit AddTexture(prime::graphics::Texture &hdr, uint32 nameHash) {
+static TextureUnit AddTexture(const prime::graphics::Texture &hdr,
+                              uint32 nameHash) {
   TextureUnit unit;
   glGenTextures(1, &unit.id);
-  unit.target = hdr.target;
-  unit.flags = hdr.flags;
+  auto &meta = *hdr.info();
+  unit.target = meta.target();
+  unit.flags = meta.flags();
   LoadBindedTextureLevels({hdr, nameHash, unit.id});
 
-  if (hdr.flags == TextureFlag::Swizzle) {
-    glTexParameteriv(hdr.target, GL_TEXTURE_SWIZZLE_RGBA, hdr.swizzleMask);
+  if (auto swizzle = hdr.swizzle(); swizzle) {
+    glTexParameteriv(meta.target(), GL_TEXTURE_SWIZZLE_RGBA,
+                     swizzle->mask()->data());
   }
 
-  for (uint32 i = 1; i < hdr.numStreams; i++) {
+  for (uint32 i = 1; i < meta.numStreams(); i++) {
     if (i >= MIN_DEFER_LEVEL) {
       DEFERRED_LOADER_QUEUE[i - 1].emplace_back(std::bind(
           LoadBindedTextureLevels, DeferredPayload{hdr, nameHash, unit.id, i}));
@@ -239,14 +248,16 @@ void prime::graphics::StreamTextures(size_t streamIndex) {
 }
 
 template <> class prime::common::InvokeGuard<Texture> {
-  static inline const bool data =
-      prime::common::AddResourceHandle<Texture>({
-          .Process =
-              [](ResourceData &data) {
-                auto hdr = data.As<Texture>();
-                auto unit = AddTexture(*hdr, data.hash.name);
-                TEXTURE_UNITS.emplace(data.hash.name, unit);
-              },
-          .Delete = nullptr,
-      });
+  static inline const bool data = prime::common::AddResourceHandle<Texture>({
+      .Process =
+          [](ResourceData &data) {
+            auto hdr = utils::GetFlatbuffer<Texture>(data);
+            auto unit = AddTexture(*hdr, data.hash.name);
+            TEXTURE_UNITS.emplace(data.hash.name, unit);
+          },
+      .Delete = nullptr,
+      .Handle = [](ResourceData &data) -> void * {
+        return utils::GetFlatbuffer<Texture>(data);
+      },
+  });
 };

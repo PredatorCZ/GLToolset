@@ -17,7 +17,7 @@ void IterateResources(IterFunc cb) {
         return {[](auto item) -> std::pair<uint32, std::string_view> {
           return {JenkinsHash_(item), item + 7};
         }(item)...};
-      }("prime::graphics::Pipeline", "prime::graphics::Texture",
+      }("prime::graphics::ModelSingle", "prime::graphics::Texture",
           "prime::graphics::TextureStream<0>",
           "prime::graphics::TextureStream<1>",
           "prime::graphics::TextureStream<2>",

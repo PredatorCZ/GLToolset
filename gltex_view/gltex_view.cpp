@@ -2,53 +2,40 @@
 
 #include <GLFW/glfw3.h>
 
+#include "ImGuiFileDialog.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_opengl3.h"
+
 #include "datas/binreader.hpp"
 #include "datas/binwritter.hpp"
 #include "datas/fileinfo.hpp"
 #include "datas/flags.hpp"
 #include "datas/master_printer.hpp"
-
-#include "ImGuiFileDialog.h"
-#include "imgui_impl_glfw.h"
-#include "imgui_impl_opengl3.h"
-
-#include <glm/ext.hpp>
-#include <glm/gtx/dual_quaternion.hpp>
-
-#include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <unistd.h>
-
-#include "graphics/texture.hpp"
-#include "tex_format_ref.hpp"
-
-#include "render_box.hpp"
-#include "render_cube.hpp"
-#include "render_model.hpp"
+#include <optional>
+#include <variant>
 
 #include "common/camera.hpp"
 #include "common/resource.hpp"
 #include "graphics/frame_buffer.hpp"
-#include "graphics/pipeline.hpp"
 #include "graphics/post_process.hpp"
+#include "graphics/program.hpp"
 #include "graphics/sampler.hpp"
-#include "utils/builder.hpp"
-#include "utils/fixer.hpp"
+#include "graphics/texture.hpp"
+#include "tex_format_ref.hpp"
+#include "utils/flatbuffers.hpp"
+#include "utils/instancetm_builder.hpp"
 #include "utils/resource_report.hpp"
+#include "utils/shader_preprocessor.hpp"
 
-#include "simplecpp.h"
-
-#include <optional>
-#include <variant>
+#include "texture.fbs.hpp"
 
 namespace pc = prime::common;
 namespace pu = prime::utils;
 namespace pg = prime::graphics;
 
+#include "render_box.hpp"
 #include "render_aabb.hpp"
+#include "render_model.hpp"
 #include "render_ts.hpp"
 
 void PreloadResources() {
@@ -87,122 +74,10 @@ void PreloadResources() {
   }
 }
 
-pc::ResourceData BuildPipeline(pg::TextureFlags texFlags,
-                               const std::string &path) {
-  pu::Builder<pg::Pipeline> pipeline;
-  pipeline.SetArray(pipeline.Data().stageObjects, 2);
-  pu::DefineBuilder defBuilder;
-  defBuilder.AddDefine("TS_QUAT");
-  defBuilder.AddDefine("TS_TANGENT_ATTR");
-  defBuilder.AddKeyValue("NUM_LIGHTS", 1);
-
-  const bool isNormal = texFlags == pg::TextureFlag::NormalMap;
-
-  if (isNormal) {
-    if (texFlags == pg::TextureFlag::NormalDeriveZAxis) {
-      defBuilder.AddDefine("TS_NORMAL_DERIVE_Z");
-    }
-    if (texFlags != pg::TextureFlag::SignedNormal) {
-      defBuilder.AddDefine("TS_NORMAL_UNORM");
-    }
-  }
-
-  pipeline.SetArray(pipeline.Data().definitions, defBuilder.buffer.size());
-  memcpy(pipeline.Data().definitions.begin(), defBuilder.buffer.data(),
-         defBuilder.buffer.size());
-
-  auto &stageArray = pipeline.Data().stageObjects;
-
-  auto &vertObj = stageArray[0];
-  vertObj.stageType = GL_VERTEX_SHADER;
-  vertObj.object = JenkinsHash3_("basics/simple_cube.vert");
-
-  auto &fragObj = stageArray[1];
-  fragObj.stageType = GL_FRAGMENT_SHADER;
-
-  if (isNormal) {
-    fragObj.object = JenkinsHash3_("single_texture/main_normal.frag");
-  } else {
-    fragObj.object = JenkinsHash3_("single_texture/main_albedo.frag");
-  }
-
-  pipeline.SetArray(pipeline.Data().textureUnits, 1);
-  auto &textureArray = pipeline.Data().textureUnits;
-  auto &texture = textureArray[0];
-  texture.sampler = JenkinsHash3_("res/default");
-  texture.slotHash = JenkinsHash_(isNormal ? "smTSNormal" : "smAlbedo");
-  texture.texture = JenkinsHash3_(path);
-
-  pipeline.SetArray(pipeline.Data().uniformBlocks, 1);
-  auto &uniformBlockArray = pipeline.Data().uniformBlocks;
-  auto &uniformBlock = uniformBlockArray[0];
-  uniformBlock.data.resourceHash =
-      pc::MakeHash<pg::UniformBlockData>("main_uniform");
-  uniformBlock.bufferObject = JenkinsHash_("ubFragmentProperties");
-
-  return {pc::MakeHash<pg::Pipeline>("main"), std::move(pipeline.buffer)};
-}
-
-pc::ResourceData BuildLightPipeline() {
-  pu::Builder<pg::Pipeline> pipeline;
-  pipeline.SetArray(pipeline.Data().stageObjects, 2);
-  auto &stageArray = pipeline.Data().stageObjects;
-
-  auto &vertObj = stageArray[0];
-  vertObj.stageType = GL_VERTEX_SHADER;
-  vertObj.object = JenkinsHash3_("basics/simple_sprite.vert");
-
-  auto &fragObj = stageArray[1];
-  fragObj.stageType = GL_FRAGMENT_SHADER;
-  fragObj.object = JenkinsHash3_("light/main.frag");
-
-  pipeline.SetArray(pipeline.Data().textureUnits, 1);
-  auto &textureArray = pipeline.Data().textureUnits;
-  auto &texture = textureArray[0];
-  texture.sampler = JenkinsHash3_("res/default");
-  texture.slotHash = JenkinsHash_("smTexture");
-  texture.texture = JenkinsHash3_("res/light");
-
-  return {pc::MakeHash<pg::Pipeline>("res/light"), std::move(pipeline.buffer)};
-}
-/*
-pg::PostProcess GlowPostProcess(pg::FrameBuffer &fbo) {
-  pu::Builder<pg::Pipeline> pipeline;
-  pipeline.SetArray(pipeline.Data().stageObjects, 2);
-  auto &stageArray = pipeline.Data().stageObjects;
-
-  auto &vertObj = stageArray[0];
-  vertObj.stageType = GL_VERTEX_SHADER;
-  vertObj.object = JenkinsHash3_("basics/viewport.vert");
-
-  auto &fragObj = stageArray[1];
-  fragObj.stageType = GL_FRAGMENT_SHADER;
-  fragObj.object = JenkinsHash3_("post_process/glow.frag");
-
-  pipeline.SetArray(pipeline.Data().textureUnits, 2);
-  auto &textureArray = pipeline.Data().textureUnits;
-  {
-    auto &texture = textureArray[0];
-    texture.sampler = JenkinsHash3_("res/default");
-    texture.slotHash = JenkinsHash_("smColor");
-    texture.texture = fbo.FindTexture(pg::FrameTextureType::Color);
-  }
-  {
-    auto &texture = textureArray[1];
-    texture.sampler = JenkinsHash3_("res/default");
-    texture.slotHash = JenkinsHash_("smGlow");
-    texture.texture = fbo.FindTexture(pg::FrameTextureType::Glow);
-  }
-
-  return {pc::MakeHash<pg::Pipeline>("res/light"), std::move(pipeline.buffer)};
-}*/
-
 using MainUBType = prime::shaders::single_texture::ubFragmentProperties;
 
 struct MainTexture {
   pg::TextureUnit texture;
-  pg::Texture texHdr;
-  pg::Pipeline *pipeline;
   CubeObject object;
   std::string infoText;
   int maxLevel{};
@@ -222,14 +97,12 @@ MainTexture BuildFromTexture(MainUBType &ub, std::string path) {
       pc::AddSimpleResource(path, tex.type);
     }
 
-    auto hdrData = pc::LoadResource(mainTexture);
-    auto &hdr = *hdrData.template As<pg::Texture>();
-    auto unit = pg::LookupTexture(mainTexture.name);
-
-    return std::make_pair(unit, hdr);
+    pc::LoadResource(mainTexture);
+    return mainTexture.name;
   };
 
-  auto [texture, textureHdr] = LoadTexture();
+  auto textureName = LoadTexture();
+  auto texture = pg::LookupTexture(textureName);
 
   if (texture.flags == pg::TextureFlag::NormalMap) {
     ub.ambientColor = {};
@@ -237,21 +110,11 @@ MainTexture BuildFromTexture(MainUBType &ub, std::string path) {
     ub.ambientColor = {0.7, 0.7, 0.7};
   }
 
-  auto pipeline = [&, textureFlags = texture.flags] {
-    auto mainPipeline = BuildPipeline(textureFlags, path);
-    pc::AddSimpleResource(std::move(mainPipeline));
-    auto &pipelineData = pc::LoadResource(mainPipeline.hash);
-    auto pipeline = pipelineData.As<pg::Pipeline>();
-    return pipeline;
-  }();
-
   MainTexture retVal{
       .texture = texture,
-      .texHdr = textureHdr,
-      .pipeline = pipeline,
-      .object = CubeObject(retVal.pipeline),
+      .object = CubeObject(textureName, texture.flags),
       .infoText =
-          [&, &textureHdr = textureHdr, &texture = texture] {
+          [&] {
             char infoBuffer[0x100];
 
             auto FindEnumName = [](auto what) {
@@ -267,23 +130,35 @@ MainTexture BuildFromTexture(MainUBType &ub, std::string path) {
 
             using TexFlag = pg::TextureFlag;
 
-            auto typeStr =
-                texture.flags[TexFlag::Compressed]
-                    ? FindEnumName(CompressedFormats(textureHdr.internalFormat))
-                    : FindEnumName(InternalFormats(textureHdr.internalFormat));
+            int internalFormat;
+            int width;
+            int height;
+            int maxLevel;
+
+            glGetTextureLevelParameteriv(
+                texture.id, 0, GL_TEXTURE_INTERNAL_FORMAT, &internalFormat);
+            glGetTextureLevelParameteriv(texture.id, 0, GL_TEXTURE_WIDTH,
+                                         &width);
+            glGetTextureLevelParameteriv(texture.id, 0, GL_TEXTURE_HEIGHT,
+                                         &height);
+            glGetTextureParameteriv(texture.id, GL_TEXTURE_MAX_LEVEL,
+                                    &maxLevel);
+
+            auto typeStr = texture.flags == TexFlag::Compressed
+                               ? FindEnumName(CompressedFormats(internalFormat))
+                               : FindEnumName(InternalFormats(internalFormat));
 
             snprintf(infoBuffer, sizeof(infoBuffer),
                      "Type: %s\nWidth: %u\nHeight: %u\nMaxLevel: "
                      "%u\nActiveLevel: %%u\n",
-                     typeStr, textureHdr.width, textureHdr.height,
-                     textureHdr.maxLevel);
+                     typeStr, width, height, maxLevel);
             std::string retval(infoBuffer);
 
             return retval;
           }(),
   };
 
-  if (texture.flags[prime::graphics::TextureFlag::NormalMap]) {
+  if (texture.flags == pg::TextureFlag::NormalMap) {
     retVal.object.lightDataSpans.pointLights[0].color = glm::vec3{0.7f};
   }
 
@@ -303,12 +178,11 @@ ModelObject BuildFromModel(std::string path) {
     pc::AddSimpleResource(std::string(inf.GetFullPathNoExt()), clHash);
   }
 
-  auto mainModel = pc::AddSimpleResource<pg::VertexArray>(path);
+  auto mainModel = pc::AddSimpleResource<pg::ModelSingle>(path);
   auto &hdrData = pc::LoadResource(mainModel);
-  auto hdr = hdrData.template As<pg::VertexArray>();
+  auto hdr = pc::GetResourceHandle(hdrData);
   hdrData.numRefs++;
-  hdr->SetupTransform(true);
-  return ModelObject(hdr);
+  return ModelObject(static_cast<pg::ModelSingle *>(hdr));
 }
 
 void GLAPIENTRY MessageCallback(GLenum source, GLenum type, GLuint id,
@@ -343,8 +217,8 @@ int main(int, char *argv[]) {
       [](int type, const char *msg) { printerror('(' << type << ')' << msg); });
 
   glfwInit();
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
   int width = 1800;
@@ -362,8 +236,8 @@ int main(int, char *argv[]) {
   GLFWwindow *sharedWindow = glfwCreateWindow(1, 1, "", nullptr, window);
 
   glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
   glfwWindowHint(GLFW_CONTEXT_RELEASE_BEHAVIOR, GLFW_RELEASE_BEHAVIOR_FLUSH);
 
@@ -404,16 +278,7 @@ int main(int, char *argv[]) {
     return res.As<MainUBType>();
   }();
 
-  *mainUBData = {{0.7, 0.7, 0.7}, 1.5, 32.f, 1.f};
-
-  auto lightPipeline = [&] {
-    pc::ResourceData pipelineData_ = BuildLightPipeline();
-    pc::AddSimpleResource(std::move(pipelineData_));
-    auto &pipelineData = pc::LoadResource(pipelineData_.hash);
-    auto pipeline = pipelineData.As<pg::Pipeline>();
-    pipelineData.numRefs++;
-    return pipeline;
-  }();
+  *mainUBData = {{0.7, 0.7, 0.7}, 1.5, 32.f, 1.f, 0.3f};
 
   uint32 cameraIndex = pc::AddCamera(JenkinsHash3_("default_camera"), {});
   auto &camera = pc::GetCamera(JenkinsHash3_("default_camera"));
@@ -466,7 +331,7 @@ int main(int, char *argv[]) {
   glm::vec2 lightYawPitch{};
   glm::vec3 cameraPosition{};
 
-  BoxObject boxObj(*lightPipeline);
+  BoxObject boxObj;
 
   auto UpdateCamera = [&] {
     auto cameraTM = glm::lookAt((lookAtDirection * radius), glm::vec3{},
@@ -508,10 +373,10 @@ int main(int, char *argv[]) {
 
     uint32 classId = pc::GetClassFromExtension(assInf.GetExtension().substr(1));
 
-    if (classId == pc::GetClassHash<pg::VertexArray>()) {
+    if (classId == pc::GetClassHash<pg::ModelSingle>()) {
       mainObject = BuildFromModel(std::string(assInf.GetFullPathNoExt()));
       auto &modelObj = std::get<ModelObject>(mainObject);
-      lightOrbit.w = modelObj.vtArray->aabb.bounds.w;
+      lightOrbit.w = modelObj.vtArray->aabb()->bounds.w;
       lightScale = lightOrbit.w / 10;
       mainProgram = &modelObj;
       isModel = true;
@@ -521,7 +386,7 @@ int main(int, char *argv[]) {
       }
 
       if (showTS) {
-        visModel.emplace(modelObj.vtArray);
+        visModel.emplace(modelObj.mdl);
       }
 
     } else if (classId == pc::GetClassHash<pg::Texture>()) {
@@ -550,9 +415,9 @@ int main(int, char *argv[]) {
 
   while (!glfwWindowShouldClose(window)) {
     mainProgram->lightSpans.pointLightTMs[0] = lightOrbit * lightOrbit.w;
-    boxObj.localPos =
+    *boxObj.localPos =
         glm::vec4(glm::vec3{lightOrbit * lightOrbit.w}, lightScale);
-    boxObj.lightColor = mainProgram->lightDataSpans.pointLights[0].color;
+    *boxObj.lightColor = mainProgram->lightDataSpans.pointLights[0].color;
     *mainProgram->lightSpans.viewPos =
         glm::vec<3, float, glm::highp>{} * camera.transform;
 
@@ -583,7 +448,6 @@ int main(int, char *argv[]) {
     }
 
     glEnable(GL_BLEND);
-    lightPipeline->BeginRender();
     boxObj.Render();
     glDisable(GL_BLEND);
 
@@ -739,8 +603,8 @@ int main(int, char *argv[]) {
               texObj.lastLevel = std::max(0, texObj.lastLevel);
               texObj.lastLevel = std::min(texObj.maxLevel, texObj.lastLevel);
 
-              glBindTexture(texObj.texHdr.target, texObj.texture.id);
-              glTexParameteri(texObj.texHdr.target, GL_TEXTURE_BASE_LEVEL,
+              glBindTexture(texObj.texture.target, texObj.texture.id);
+              glTexParameteri(texObj.texture.target, GL_TEXTURE_BASE_LEVEL,
                               texObj.lastLevel);
             } else {
               if (io.MouseWheel < 0) {
@@ -758,7 +622,7 @@ int main(int, char *argv[]) {
                 "InfoText", nullptr,
                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoInputs |
                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground |
-                    ImGuiWindowFlags_NoSavedSettings)) {
+                    ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize)) {
           std::visit(
               [](auto &i) {
                 if constexpr (!std::is_same_v<std::decay_t<decltype(i)>,
@@ -798,12 +662,12 @@ int main(int, char *argv[]) {
 
       if (isModel && ImGui::Checkbox("Show Tangent Space", &showTS)) {
         if (showTS && !visModel) {
-          visModel.emplace(std::get<ModelObject>(mainObject).vtArray);
+          visModel.emplace(std::get<ModelObject>(mainObject).mdl);
         }
       }
 
       if (showTS) {
-        ImGui::SliderFloat("Normal Size", &visModel->magnitude, 0, 300);
+        ImGui::SliderFloat("Normal Size", visModel->magnitude, 0, 300);
       }
 
       ImGui::SliderFloat("Glow Level", &mainUBData->glowLevel, 0, 10);

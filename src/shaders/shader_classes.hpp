@@ -17,7 +17,6 @@ namespace prime::shaders {
 #define CPPATTR3(...) __VA_ARGS__
 
 #include "common/light_omni.h.glsl"
-#include "common/common.h.glsl"
 
 namespace single_texture {
 #include "single_texture/main.h.glsl"

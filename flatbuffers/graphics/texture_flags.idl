@@ -1,0 +1,12 @@
+namespace prime.graphics;
+
+enum TextureFlags : uint16 (bit_flags) {
+  Cubemap,
+  Array,
+  Volume,
+  Compressed,
+  AlphaMasked,
+  NormalMap,
+  NormalDeriveZAxis,
+  SignedNormal,
+}

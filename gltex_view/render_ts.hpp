@@ -1,72 +1,77 @@
 #pragma once
-#include "graphics/pipeline.hpp"
+#include "model_single.fbs.hpp"
 
 struct NormalVisualizer {
-  prime::graphics::VertexArray *vtArray;
-  float magnitude = 10;
-  uint32 magnitudePos = 0;
+  float *magnitude;
+  prime::graphics::ModelSingle *model;
 
-  NormalVisualizer(prime::graphics::VertexArray *vtArray_) {
-    pu::Builder<pg::Pipeline> pipelineRes;
-    pipelineRes.SetArray(pipelineRes.Data().stageObjects, 3);
-    pg::Pipeline *vtPip = vtArray_->pipeline;
+  NormalVisualizer(const prime::graphics::ModelSingle *mdl) {
+    flatbuffers::FlatBufferBuilder builder;
+    auto stagesPtr = [&] {
+      std::vector<pg::StageObject> objects;
+      objects.emplace_back(JenkinsHash3_("basics/ts_normal.vert"), 0,
+                           GL_VERTEX_SHADER);
+      objects.emplace_back(JenkinsHash3_("basics/ts_normal.frag"), 0,
+                           GL_FRAGMENT_SHADER);
+      objects.emplace_back(JenkinsHash3_("basics/ts_normal.geom"), 0,
+                           GL_GEOMETRY_SHADER);
+      return builder.CreateVectorOfStructs(objects);
+    }();
 
-    std::string_view definitionBuffer(vtPip->definitions.begin(),
-                                      vtPip->definitions.numItems);
-    pu::DefineBuilder defBuilder;
-
-    while (definitionBuffer.size()) {
-      int8 len = definitionBuffer.front();
-      definitionBuffer.remove_prefix(1);
-      auto item = definitionBuffer.substr(0, len);
-
-      if (!item.starts_with("NUM_LIGHTS")) {
-        defBuilder.AddDefine(item);
+    auto definesPtr = [&] {
+      std::vector<flatbuffers::Offset<flatbuffers::String>> offsets;
+      for (auto d : *mdl->program()->definitions()) {
+        std::string_view def(d->data(), d->size());
+        if (def.starts_with("TS_") || def.starts_with("VS_NUMUVTMS")) {
+          offsets.emplace_back(builder.CreateString(def));
+        }
       }
+      return builder.CreateVector(offsets);
+    }();
 
-      definitionBuffer.remove_prefix(len);
+    pg::ProgramBuilder pgmBuild(builder);
+    pgmBuild.add_stages(stagesPtr);
+    pgmBuild.add_program(-1);
+    pgmBuild.add_definitions(definesPtr);
+    auto pgmPtr = pgmBuild.Finish();
+    auto vtxPtr = builder.CreateStruct(
+        *static_cast<pg::VertexArray *const *>(mdl->vertexArray()));
+    uint32 magName = JenkinsHash_("magnitude");
+
+    auto uniformsPtr = [&] {
+      std::vector<pg::UniformValue> uniforms;
+      uniforms.emplace_back(magName, 0, 0);
+      return builder.CreateVectorOfStructs(uniforms);
+    }();
+
+    pg::ModelRuntime runtimeDummy{};
+    pg::ModelSingleBuilder mdlBuild(builder);
+    mdlBuild.add_program(pgmPtr);
+    mdlBuild.add_runtime(&runtimeDummy);
+    mdlBuild.add_vertexArray_type(pc::ResourceVar_ptr);
+    mdlBuild.add_vertexArray(vtxPtr.Union());
+    mdlBuild.add_uniformValues(uniformsPtr);
+
+    prime::utils::FinishFlatBuffer(mdlBuild);
+
+    auto mdlHash = pc::MakeHash<pg::ModelSingle>("main_normal_vis");
+    pc::AddSimpleResource(pc::ResourceData{
+        mdlHash,
+        {
+            reinterpret_cast<const char *>(builder.GetBufferPointer()),
+            builder.GetSize(),
+        },
+    });
+    auto &data = pc::LoadResource(mdlHash);
+    model = static_cast<pg::ModelSingle *>(pc::GetResourceHandle(data));
+
+    for (auto u : *model->uniformValues()) {
+      if (u->name() == magName) {
+        magnitude = const_cast<float *>(reinterpret_cast<const float *>(u->data()));
+        break;
+      }
     }
-
-    pipelineRes.SetArray(pipelineRes.Data().definitions,
-                         defBuilder.buffer.size());
-    memcpy(pipelineRes.Data().definitions.begin(), defBuilder.buffer.data(),
-           defBuilder.buffer.size());
-
-    auto &stageArray = pipelineRes.Data().stageObjects;
-
-    auto &vertObj = stageArray[0];
-    vertObj.stageType = GL_VERTEX_SHADER;
-    vertObj.object = JenkinsHash3_("basics/ts_normal.vert");
-
-    auto &geomObj = stageArray[1];
-    geomObj.stageType = GL_GEOMETRY_SHADER;
-    geomObj.object = JenkinsHash3_("basics/ts_normal.geom");
-
-    auto &fragObj = stageArray[2];
-    fragObj.stageType = GL_FRAGMENT_SHADER;
-    fragObj.object = JenkinsHash3_("basics/ts_normal.frag");
-
-    auto pipelineHash = pc::MakeHash<pg::Pipeline>("main_normal_vis");
-    pc::AddSimpleResource({pipelineHash, std::move(pipelineRes.buffer)});
-
-    prime::common::ResourceData vtArrayRes = pc::FindResource(vtArray_);
-    vtArrayRes.hash.name = JenkinsHash3_("main_normal_vis_vertex_array");
-
-    vtArray = vtArrayRes.As<prime::graphics::VertexArray>();
-    vtArray->pipeline.resourceHash = pipelineHash;
-    vtArray->index = 0;
-
-    pc::AddSimpleResource({vtArrayRes.hash, std::move(vtArrayRes.buffer)});
-    auto &vtRes = pc::LoadResource(vtArrayRes.hash);
-    vtArray = vtRes.As<prime::graphics::VertexArray>();
-    vtArray->SetupTransform(true);
-    magnitudePos =
-        glGetUniformLocation(vtArray->pipeline->program, "magnitude");
   }
 
-  void Render() {
-    vtArray->BeginRender();
-    glUniform1f(magnitudePos, magnitude);
-    vtArray->EndRender();
-  }
+  void Render() { pg::Draw(*model); }
 };

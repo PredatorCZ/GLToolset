@@ -30,12 +30,6 @@ static uint32 CompileStage(uint32 type, const char *data) {
 }
 
 namespace prime::graphics {
-void PostProcessStage::Resize(uint32 width, uint32 height) {
-  /*auto &screen = uniforms.at("screenSize").data;
-  screen[0] = width;
-  screen[1] = height;*/
-}
-
 static uint32 VAOID = 0;
 
 PostProcessStage AddPostProcessStage(uint32 object, const FrameBuffer &canvas) {
@@ -115,8 +109,6 @@ PostProcessStage AddPostProcessStage(uint32 object, const FrameBuffer &canvas) {
       }
     }
   }
-
-  retVal.Resize(canvas.width, canvas.height);
 
   return retVal;
 }

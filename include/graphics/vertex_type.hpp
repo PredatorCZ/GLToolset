@@ -10,7 +10,14 @@ enum class VertexType : uint8 {
   TexCoord40,
   TexCoord41,
   TexCoord42,
-  Transforms,
-  count_,
 };
-}
+
+enum class TSType : uint8 {
+  None,
+  Normal,
+  Matrix,
+  QTangent,
+};
+
+static constexpr TSType TSType_None = TSType::None;
+} // namespace prime::graphics

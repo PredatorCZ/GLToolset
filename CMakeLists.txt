@@ -21,7 +21,7 @@ set(NO_OBJECTS
 add_subdirectory(${TPD_PATH}/precore)
 include(targetex)
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/fbs)
 
 add_subdirectory(${TPD_PATH}/precore/spike ${CMAKE_CURRENT_BINARY_DIR}/spike)
 add_subdirectory(${TPD_PATH}/precore/gltf)
@@ -29,6 +29,7 @@ set_target_properties(spike PROPERTIES OUTPUT_NAME gl_toolset)
 
 add_subdirectory(${TPD_PATH}/imgui)
 add_subdirectory(${TPD_PATH}/simplecpp)
+add_subdirectory(flatbuffers EXCLUDE_FROM_ALL)
 
 build_target(
   NAME
@@ -36,18 +37,22 @@ build_target(
   TYPE
   OBJECT
   SOURCES
+  src/common/resource.cpp
+  src/common/camera.cpp
+  src/common/registry.cpp
+
   src/graphics/sampler.cpp
   src/graphics/texture.cpp
   src/graphics/vertex.cpp
-  src/common/resource.cpp
-  src/utils/shader_preprocessor.cpp
-  src/graphics/pipeline.cpp
-  src/common/camera.cpp
-  src/common/registry.cpp
+  src/graphics/model_single.cpp
+  src/graphics/program.cpp
   src/graphics/frame_buffer.cpp
   src/graphics/post_process.cpp
+
+  src/utils/shader_preprocessor.cpp
   LINKS
   precore
+  flatbuffers
   simplecpp)
 
 target_include_directories(prime PUBLIC src/shaders)

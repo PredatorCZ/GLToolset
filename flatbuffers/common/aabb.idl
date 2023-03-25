@@ -1,0 +1,8 @@
+include "common/math.idl";
+
+namespace prime.common;
+
+struct AABB {
+    center:Vector4A16;
+    bounds:Vector4A16;
+}
