@@ -1,4 +1,4 @@
-include "common/resource.idl";
+include "common/resource.idl.fbs";
 
 namespace prime.common;
 

@@ -50,6 +50,8 @@ build_target(
   src/graphics/post_process.cpp
 
   src/utils/shader_preprocessor.cpp
+  src/utils/reflect.cpp
+  src/utils/reflect_graphics.cpp
   LINKS
   precore
   flatbuffers

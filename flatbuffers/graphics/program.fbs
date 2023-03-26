@@ -1,9 +1,11 @@
+include "graphics/glenum.idl.fbs";
+
 namespace prime.graphics;
 
 struct StageObject {
     resource:uint32;
     object:uint32;
-    type:uint16;
+    type:GlEnum;
 }
 
 table Program {

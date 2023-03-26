@@ -1,10 +1,11 @@
-include "graphics/texture_flags.idl";
-include "common/resource.idl";
+include "graphics/texture_flags.idl.fbs";
+include "common/resource.idl.fbs";
+include "graphics/glenum.idl.fbs";
 
 namespace prime.graphics;
 
 struct TextureEntry {
-  target:uint16;
+  target:GlEnum;
   level:uint8;
   streamIndex:uint8;
   bufferSize:uint32;
@@ -15,10 +16,10 @@ struct TextureInfo {
   width:uint16;
   height:uint16;
   depth:uint16;
-  internalFormat:uint16;
-  format:uint16;
-  type:uint16;
-  target:uint16;
+  internalFormat:GlEnum;
+  format:GlEnum;
+  type:GlEnum;
+  target:GlEnum;
   maxLevel:uint8;
   numDims:uint8;
   reserved:uint8;
@@ -27,7 +28,7 @@ struct TextureInfo {
 }
 
 struct TextureSwizzle {
-  mask:[int32:4];
+  mask:[GlEnum32:4];
 }
 
 table Texture {

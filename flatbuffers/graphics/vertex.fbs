@@ -1,14 +1,15 @@
-include "graphics/vertex_type.idl";
-include "common/aabb.idl";
-include "common/resource.idl";
-include "common/transform.idl";
+include "graphics/vertex_type.idl.fbs";
+include "graphics/glenum.idl.fbs";
+include "common/aabb.idl.fbs";
+include "common/resource.idl.fbs";
+include "common/transform.idl.fbs";
 
 namespace prime.graphics;
 
 struct VertexAttribute {
   slot:VertexType;
   size:uint8;
-  type:uint16;
+  type:GlEnum;
   normalized:bool;
   offset:uint8;
 }
@@ -17,8 +18,8 @@ table VertexBuffer {
   attributes:[VertexAttribute];
   buffer:common.ResourceHash;
   size:uint32;
-  target:uint16;
-  usage:uint16;
+  target:GlEnum;
+  usage:GlEnum;
   stride:uint8;
 }
 
@@ -31,8 +32,8 @@ table VertexArray {
   aabb:common.AABB;
   index:uint32;
   count:uint32;
-  mode:uint16;
-  type:uint16;
+  mode:GlDrawMode;
+  type:GlEnum;
   tsType:TSType;
 }
 
