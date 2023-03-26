@@ -4,7 +4,7 @@ set(CMAKE_CXX_STANDARD 20)
 project(GLToolset VERSION 1.0)
 
 if(NOT MSVC)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -rdynamic")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wl,--no-undefined")
 endif()
 
 set(TPD_PATH ${CMAKE_CURRENT_SOURCE_DIR}/3rd_party)
@@ -30,6 +30,36 @@ set_target_properties(spike PROPERTIES OUTPUT_NAME gl_toolset)
 add_subdirectory(${TPD_PATH}/imgui)
 add_subdirectory(${TPD_PATH}/simplecpp)
 add_subdirectory(flatbuffers EXCLUDE_FROM_ALL)
+add_subdirectory(${TPD_PATH}/ispctex EXCLUDE_FROM_ALL)
+
+build_target(
+  NAME
+  prime_converters
+  TYPE
+  OBJECT
+  SOURCES
+  ${TPD_PATH}/ispctex/ispc_texcomp.cpp
+  ${TPD_PATH}/stb/stb_image.c
+  ${TPD_PATH}/stb/stb_image_resize.c
+  ${TPD_PATH}/mikktspace/mikktspace.c
+  src/utils/md2.cpp
+  src/utils/image.cpp
+  INCLUDES
+  ${TPD_PATH}/mikktspace
+  ${ISPCTEX_DIR}
+  ${TPD_PATH}/ispctex
+  ${TPD_PATH}/stb
+  DEFINITIONS
+  STB_IMAGE_IMPLEMENTATION
+  STB_IMAGE_RESIZE_IMPLEMENTATION
+  LINKS
+  precore
+  PROPERTIES
+  POSITION_INDEPENDENT_CODE
+  ON
+)
+
+target_link_libraries(prime_converters ${ISPCTEX_DIR}/kernel_ispc_avx.o ${ISPCTEX_DIR}/kernel_ispc_sse2.o ${ISPCTEX_DIR}/kernel_ispc.o)
 
 build_target(
   NAME
@@ -52,8 +82,9 @@ build_target(
   src/utils/shader_preprocessor.cpp
   src/utils/reflect.cpp
   src/utils/reflect_graphics.cpp
+  src/utils/converters.cpp
   LINKS
-  precore
+  prime_converters
   flatbuffers
   simplecpp)
 

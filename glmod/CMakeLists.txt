@@ -9,12 +9,8 @@ build_target(
   ESMODULE
   SOURCES
   make_glmod.cpp
-  ${TPD_PATH}/mikktspace/mikktspace.c
   LINKS
-  precore
-  INCLUDES
-  ${TPD_PATH}/mikktspace
-  ../src/shaders
+  prime_converters
   AUTHOR
   "Lukas Cone"
   DESCR
