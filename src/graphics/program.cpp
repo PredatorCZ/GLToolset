@@ -166,7 +166,8 @@ CreateProgram(prime::graphics::Program &pgm,
   std::sort(key.begin(), key.end());
 
   if (fullyCached) {
-    return programObjects.at(stagesToProgram.at(key));
+    pgm.mutate_program(stagesToProgram.at(key));
+    return programObjects.at(pgm.program());
   }
   uint32 program = glCreateProgram();
 

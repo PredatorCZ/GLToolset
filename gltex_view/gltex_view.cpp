@@ -504,7 +504,7 @@ int main(int, char *argv[]) {
         if (ImGui::BeginMenu("File")) {
           if (ImGui::MenuItem("Open", "Ctrl+O")) {
             ImGuiFileDialog::Instance()->OpenDialog(
-                "ChooseFileDlgKey", "Choose File", ".gtte,.gvay", argv[1]);
+                "ChooseFileDlgKey", "Choose File", ".gtte,.gmse", argv[1]);
           }
           ImGui::EndMenu();
         }
