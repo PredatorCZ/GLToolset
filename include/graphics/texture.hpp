@@ -35,8 +35,6 @@ void ClampTextureResolution(uint32 clampedRes);
 void MinimumStreamIndexForDeferredLoading(uint32 minId);
 
 void StreamTextures(size_t streamIndex);
-
-common::ResourceHash RedirectTexture(common::ResourceHash tex, size_t index);
 } // namespace prime::graphics
 
 CLASS_RESOURCE(1, prime::graphics::Texture);

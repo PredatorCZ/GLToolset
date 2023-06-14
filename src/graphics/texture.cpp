@@ -1,6 +1,6 @@
 #include "graphics/texture.hpp"
-#include "common/resource.hpp"
 #include "utils/flatbuffers.hpp"
+#include "utils/texture.hpp"
 #include <GL/glew.h>
 #include <deque>
 #include <functional>
@@ -22,29 +22,10 @@ static std::deque<std::function<void()>> DEFERRED_LOADER_QUEUE[3];
 static uint32 MIN_DEFER_LEVEL = 1;
 static uint32 CLAMP_RES = 4096;
 
-prime::common::ResourceHash
-prime::graphics::RedirectTexture(prime::common::ResourceHash tex,
-                                 size_t index) {
-  uint32 classHash = [&] {
-    switch (index) {
-    case 0:
-      return prime::common::GetClassHash<TextureStream<0>>();
-    case 1:
-      return prime::common::GetClassHash<TextureStream<1>>();
-    case 2:
-      return prime::common::GetClassHash<TextureStream<2>>();
-    case 3:
-      return prime::common::GetClassHash<TextureStream<3>>();
-    }
-  }();
-
-  return prime::common::ResourceHash{tex.name, classHash};
-}
-
 static void LoadBindedTextureLevels(DeferredPayload pl) {
   auto &hdr = pl.hdr;
-  auto resource =
-      RedirectTexture(prime::common::ResourceHash(pl.hash), pl.streamIndex);
+  auto resource = prime::utils::RedirectTexture(
+      prime::common::ResourceHash(pl.hash), pl.streamIndex);
   auto &data = prime::common::LoadResource(resource);
   uint8 minLevel = 255;
   auto &meta = *hdr.info();
