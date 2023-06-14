@@ -20,12 +20,12 @@
 #include "graphics/post_process.hpp"
 #include "graphics/program.hpp"
 #include "graphics/sampler.hpp"
-#include "graphics/texture.hpp"
 #include "tex_format_ref.hpp"
 #include "utils/flatbuffers.hpp"
 #include "utils/instancetm_builder.hpp"
 #include "utils/resource_report.hpp"
 #include "utils/shader_preprocessor.hpp"
+#include "utils/texture.hpp"
 
 #include "texture.fbs.hpp"
 
@@ -33,8 +33,8 @@ namespace pc = prime::common;
 namespace pu = prime::utils;
 namespace pg = prime::graphics;
 
-#include "render_box.hpp"
 #include "render_aabb.hpp"
+#include "render_box.hpp"
 #include "render_model.hpp"
 #include "render_ts.hpp"
 
@@ -45,9 +45,6 @@ void PreloadResources() {
   pc::AddSimpleResource<char>("basics/simple_sprite.vert");
   pc::AddSimpleResource<char>("basics/simple_cube.vert");
   pc::AddSimpleResource<char>("light/main.frag");
-
-  pc::AddSimpleResource<char>("simple_model/main.vert");
-  pc::AddSimpleResource<char>("simple_model/main.frag");
 
   pc::AddSimpleResource<char>("basics/ts_normal.vert");
   pc::AddSimpleResource<char>("basics/ts_normal.geom");
@@ -93,7 +90,7 @@ MainTexture BuildFromTexture(MainUBType &ub, std::string path) {
     auto mainTexture = pc::AddSimpleResource<pg::Texture>(path);
 
     for (size_t s = 0; s < 4; s++) {
-      auto tex = pg::RedirectTexture({}, s);
+      auto tex = pu::RedirectTexture({}, s);
       pc::AddSimpleResource(path, tex.type);
     }
 
@@ -169,15 +166,6 @@ MainTexture BuildFromTexture(MainUBType &ub, std::string path) {
 }
 
 ModelObject BuildFromModel(std::string path) {
-  BinReader refs(path + ".refs");
-  char buffer[0x1000]{};
-  while (!refs.BaseStream().getline(buffer, sizeof(buffer)).eof()) {
-    AFileInfo inf(buffer);
-    uint32 clHash = pc::GetClassFromExtension(
-        {inf.GetExtension().data() + 1, inf.GetExtension().size()});
-    pc::AddSimpleResource(std::string(inf.GetFullPathNoExt()), clHash);
-  }
-
   auto mainModel = pc::AddSimpleResource<pg::ModelSingle>(path);
   auto &hdrData = pc::LoadResource(mainModel);
   auto hdr = pc::GetResourceHandle(hdrData);
@@ -622,7 +610,8 @@ int main(int, char *argv[]) {
                 "InfoText", nullptr,
                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoInputs |
                     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground |
-                    ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize)) {
+                    ImGuiWindowFlags_NoSavedSettings |
+                    ImGuiWindowFlags_AlwaysAutoResize)) {
           std::visit(
               [](auto &i) {
                 if constexpr (!std::is_same_v<std::decay_t<decltype(i)>,

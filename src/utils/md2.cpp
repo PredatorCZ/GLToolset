@@ -12,9 +12,12 @@
 #include <GL/gl.h>
 #include <GL/glext.h>
 
+#include "graphics/sampler.hpp"
+#include "utils/debug.hpp"
 #include "utils/flatbuffers.hpp"
 #include "utils/instancetm_builder.hpp"
 #include "utils/shader_preprocessor.hpp"
+#include "utils/texture.hpp"
 
 #include "model_single.fbs.hpp"
 #include "texture.fbs.hpp"
@@ -504,7 +507,7 @@ void ProcessMD2(AppContext *ctx) {
   namespace pg = prime::graphics;
   namespace pc = prime::common;
 
-  std::vector<std::string> refs;
+  prime::utils::ResourceDebug currentDebug;
 
   // Dump position buffer
   auto outFile = std::string(ctx->workingFile.GetFullPathNoExt());
@@ -517,8 +520,8 @@ void ProcessMD2(AppContext *ctx) {
     auto nctx = ctx->NewFile(outFile);
     outPath.Load(nctx.fullPath.data() + nctx.delimiter);
     outDir = nctx.fullPath.substr(0, nctx.delimiter);
-    posHash = pc::MakeHash<pg::VertexVshData>(outPath.GetFullPathNoExt());
-    refs.push_back(nctx.fullPath.data() + nctx.delimiter);
+    posHash = currentDebug.AddRef(outPath.GetFullPathNoExt(),
+                                  pc::GetClassHash<pg::VertexVshData>());
     BinWritterRef wrh(nctx.str);
 
     for (auto &v : oVertices) {
@@ -533,8 +536,8 @@ void ProcessMD2(AppContext *ctx) {
 
   {
     auto nctx = ctx->NewFile(outFile);
-    indicesHash = pc::MakeHash<pg::VertexIndexData>(outPath.GetFullPathNoExt());
-    refs.push_back(nctx.fullPath.data() + nctx.delimiter);
+    indicesHash = currentDebug.AddRef(outPath.GetFullPathNoExt(),
+                                      pc::GetClassHash<pg::VertexIndexData>());
     BinWritterRef wrh(nctx.str);
     wrh.WriteContainer(indices);
   }
@@ -555,8 +558,8 @@ void ProcessMD2(AppContext *ctx) {
 
   {
     auto nctx = ctx->NewFile(outFile);
-    pixelHash = pc::MakeHash<pg::VertexPshData>(outPath.GetFullPathNoExt());
-    refs.push_back(nctx.fullPath.data() + nctx.delimiter);
+    pixelHash = currentDebug.AddRef(outPath.GetFullPathNoExt(),
+                                    pc::GetClassHash<pg::VertexPshData>());
     BinWritterRef wrh(nctx.str);
 
     for (size_t v = 0; v < oVertices.size(); v++) {
@@ -572,12 +575,18 @@ void ProcessMD2(AppContext *ctx) {
   }
 
   // Create vertex arrays
-  auto vayHash = pc::MakeHash<pg::VertexArray>(outPath.GetFullPathNoExt());
+  pc::ResourceHash vayHash;
   {
     outFile =
         outPath.ChangeExtension2(pc::GetClassExtension<pg::VertexArray>());
-    refs.push_back(outFile);
+
     flatbuffers::FlatBufferBuilder builder(1024);
+    auto dbgPtr = currentDebug.Build(builder);
+    es::Dispose(currentDebug);
+
+    vayHash = currentDebug.AddRef(outPath.GetFullPathNoExt(),
+                                  pc::GetClassHash<pg::VertexArray>());
+
     std::vector<flatbuffers::Offset<pg::VertexBuffer>> buffers;
 
     {
@@ -636,6 +645,7 @@ void ProcessMD2(AppContext *ctx) {
     varBuild.add_uvTransformRemaps(uvRemapsPtr);
     varBuild.add_index(-1);
     varBuild.add_tsType(pg::TSType::QTangent);
+    varBuild.add_debugInfo(dbgPtr);
     pc::AABB aabb_{
         .center = (uData.max + uData.min) / 2,
         .bounds = uData.max,
@@ -670,7 +680,7 @@ void ProcessMD2(AppContext *ctx) {
 
     std::vector<TextureSlot> textures;
 
-    auto AddStreams = [ctx, &refs, &outDir](std::string &mainPath) {
+    auto AddStreams = [ctx, &currentDebug, &outDir](std::string &mainPath) {
       size_t numStreams = 4;
 
       try {
@@ -685,21 +695,20 @@ void ProcessMD2(AppContext *ctx) {
 
       for (size_t s = 0; s < numStreams; s++) {
         std::string texStream(AFileInfo(mainPath).GetFullPathNoExt());
-        texStream.push_back('.');
-        texStream.append(ext.substr(0, 3));
-        texStream.push_back('0' + s);
-        refs.push_back(texStream);
+        currentDebug.AddRef(texStream,
+                            prime::utils::RedirectTexture({}, s).type);
       }
     };
 
     static const auto texExt = pc::GetClassExtension<pg::Texture>();
 
     {
-      uint32 texHash = JenkinsHash3_(newBranch.GetFullPathNoExt());
       auto outTexture = newBranch.ChangeExtension2(texExt);
-      refs.push_back(outTexture);
+      auto texHash = currentDebug.AddRef(newBranch.GetFullPathNoExt(),
+                                         pc::GetClassHash<pg::Texture>());
       AddStreams(outTexture);
-      textures.emplace_back(TextureSlot{texHash, "smAlbedo"});
+      textures.emplace_back(
+          TextureSlot{texHash.name, currentDebug.AddString("smAlbedo")});
     }
 
     std::vector<std::string_view> defines({
@@ -714,10 +723,11 @@ void ProcessMD2(AppContext *ctx) {
       std::string normalTexture(
           newBranch.ChangeExtension("_normal." + std::string(texExt)));
 
-      uint32 texHash = JenkinsHash3_(newBranch.ChangeExtension("_normal"));
-      refs.push_back(normalTexture);
+      auto texHash = currentDebug.AddRef(newBranch.ChangeExtension("_normal"),
+                                         pc::GetClassHash<pg::Texture>());
       AddStreams(normalTexture);
-      textures.emplace_back(TextureSlot{texHash, "smNormal"});
+      textures.emplace_back(
+          TextureSlot{texHash.name, currentDebug.AddString("smNormal")});
       defines.emplace_back("PS_IN_NORMAL");
     } catch (const es::FileNotFoundError &) {
     }
@@ -729,10 +739,11 @@ void ProcessMD2(AppContext *ctx) {
       std::string glowTexture(
           newBranch.ChangeExtension("_fx." + std::string(texExt)));
 
-      uint32 texHash = JenkinsHash3_(newBranch.ChangeExtension("_fx"));
-      refs.push_back(glowTexture);
+      auto texHash = currentDebug.AddRef(newBranch.ChangeExtension("_fx"),
+                                         pc::GetClassHash<pg::Texture>());
       AddStreams(glowTexture);
-      textures.emplace_back(TextureSlot{texHash, "smGlow"});
+      textures.emplace_back(
+          TextureSlot{texHash.name, currentDebug.AddString("smGlow")});
       defines.emplace_back("PS_IN_GLOW");
     } catch (const es::FileNotFoundError &) {
     }
@@ -747,10 +758,16 @@ void ProcessMD2(AppContext *ctx) {
 
     auto stagesPtr = [&] {
       std::vector<pg::StageObject> objects;
-      objects.emplace_back(JenkinsHash3_("simple_model/main.vert"), 0,
-                           GL_VERTEX_SHADER);
-      objects.emplace_back(JenkinsHash3_("simple_model/main.frag"), 0,
-                           GL_FRAGMENT_SHADER);
+      objects.emplace_back(
+          currentDebug
+              .AddRef("simple_model/main.vert", pc::GetClassHash<char>())
+              .name,
+          0, GL_VERTEX_SHADER);
+      objects.emplace_back(
+          currentDebug
+              .AddRef("simple_model/main.frag", pc::GetClassHash<char>())
+              .name,
+          0, GL_FRAGMENT_SHADER);
       return builder.CreateVectorOfStructs(objects);
     }();
 
@@ -762,10 +779,12 @@ void ProcessMD2(AppContext *ctx) {
 
     auto texturesPtr = [&] {
       std::vector<pg::SampledTexture> textures_;
-
       for (auto &t : textures) {
-        textures_.emplace_back(t.hash, JenkinsHash_(t.slot),
-                               JenkinsHash3_("res/default"), 0, 0);
+        textures_.emplace_back(
+            t.hash, JenkinsHash_(currentDebug.AddString(t.slot)),
+            currentDebug.AddRef("res/default", pc::GetClassHash<pg::Sampler>())
+                .name,
+            0, 0);
       }
 
       return builder.CreateVectorOfStructs(textures_);
@@ -773,16 +792,21 @@ void ProcessMD2(AppContext *ctx) {
 
     auto uniBlocksPtr = [&] {
       std::vector<pg::UniformBlock> ublocks;
-      ublocks.emplace_back(pc::MakeHash<pg::UniformBlockData>("main_uniform"),
-                           JenkinsHash_("ubFragmentProperties"), 0, 0, 0);
+      ublocks.emplace_back(
+          currentDebug.AddRef("main_uniform",
+                              pc::GetClassHash<pg::UniformBlockData>()),
+          JenkinsHash_(currentDebug.AddString("ubFragmentProperties")), 0, 0,
+          0);
 
       return builder.CreateVectorOfStructs(ublocks);
     }();
 
     auto vayPtr = builder.CreateStruct(vayHash);
     pg::ModelRuntime runtimeDummy{};
+    auto dbgPtr = currentDebug.Build(builder);
 
     pg::ModelSingleBuilder mdlBuilder(builder);
+    mdlBuilder.add_debugInfo(dbgPtr);
     mdlBuilder.add_program(pgmPtr);
     mdlBuilder.add_textures(texturesPtr);
     mdlBuilder.add_uniformBlocks(uniBlocksPtr);
@@ -797,14 +821,6 @@ void ProcessMD2(AppContext *ctx) {
     BinWritterRef wrh(ctx->NewFile(outFile).str);
     wrh.WriteBuffer(reinterpret_cast<char *>(builder.GetBufferPointer()),
                     builder.GetSize());
-  }
-
-  outFile = ctx->workingFile.ChangeExtension(".refs");
-  BinWritterRef refWr(ctx->NewFile(outFile).str);
-
-  for (auto &ref : refs) {
-    refWr.WriteContainer(ref);
-    refWr.Write('\n');
   }
 }
 } // namespace prime::utils

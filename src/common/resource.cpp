@@ -52,6 +52,10 @@ ResourceHash AddSimpleResource(std::string path, uint32 classHash) {
   hash.name = JenkinsHash3_(path);
   hash.type = classHash;
 
+  if (resources.contains(hash)) {
+    return hash;
+  }
+
   if (auto ext = GetExtentionFromHash(classHash); !ext.empty()) {
     path.push_back('.');
     path.append(ext);

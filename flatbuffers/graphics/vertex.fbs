@@ -1,6 +1,7 @@
 include "graphics/vertex_type.idl.fbs";
 include "graphics/glenum.idl.fbs";
 include "common/aabb.idl.fbs";
+include "common/debug.fbs";
 include "common/resource.idl.fbs";
 include "common/transform.idl.fbs";
 
@@ -24,7 +25,7 @@ table VertexBuffer {
 }
 
 table VertexArray {
-  meta:common.Resource(required);
+  meta:common.Resource(required, native_inline);
   buffers:[VertexBuffer];
   transforms:[common.Transform];
   uvTransforms:[glm.vec4];
@@ -35,6 +36,7 @@ table VertexArray {
   mode:GlDrawMode;
   type:GlEnum;
   tsType:TSType;
+  debugInfo:common.DebugInfo;
 }
 
 root_type VertexArray;

@@ -8,6 +8,7 @@ build_target(
   TYPE
   ESMODULE
   SOURCES
+  strip.cpp
   make_cache.cpp
   ../src/common/registry.cpp
   LINKS

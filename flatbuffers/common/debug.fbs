@@ -1,0 +1,12 @@
+namespace prime.common;
+
+struct ReferenceRemap {
+    type:uint32;
+    index:uint32;
+}
+
+table DebugInfo {
+    references:[string];
+    refTypes:[ReferenceRemap];
+    strings:[string];
+}

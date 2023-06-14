@@ -15,6 +15,22 @@ template <class C> void FinishFlatBuffer(C &builder) {
   fbb.Finish(builder.Finish(), ext.c);
 }
 
+template <class T>
+using fbs_has_debug = decltype(std::declval<T>().debugInfo());
+template <class C>
+constexpr bool fbs_has_debug_v = es::is_detected_v<fbs_has_debug, C>;
+
+template <class C> void LoadRefs(C *fbs) {
+  if (auto debug = fbs->debugInfo(); debug && debug->references()) {
+    auto &refNames = *debug->references();
+    auto &refTypes = *debug->refTypes();
+    for (auto ref : refTypes) {
+      const char *resourcePath = refNames[ref->index()]->c_str();
+      common::AddSimpleResource(resourcePath, ref->type());
+    }
+  }
+}
+
 template <class C> C *GetFlatbuffer(std::string &data) {
   auto cls = flatbuffers::GetMutableRoot<C>(data.data());
   auto ext = common::GetClassExtension<C>();
@@ -27,6 +43,10 @@ template <class C> C *GetFlatbuffer(std::string &data) {
 
   if (*cls->meta() != common::ClassResource<C>()) {
     throw std::runtime_error("Invalid resource class");
+  }
+
+  if constexpr (fbs_has_debug_v<C>) {
+    LoadRefs(cls);
   }
 
   return cls;

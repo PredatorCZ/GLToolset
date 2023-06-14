@@ -1,17 +1,19 @@
 include "graphics/model_common.fbs";
 include "graphics/program.fbs";
+include "common/debug.fbs";
 include "common/resource_var.fbs";
 
 namespace prime.graphics;
 
 table ModelSingle {
-    meta:common.Resource(required);
+    meta:common.Resource(required, native_inline);
     program:Program(required);
     vertexArray:common.ResourceVar;
-    runtime:ModelRuntime(required);
+    runtime:ModelRuntime(required, native_inline);
     textures:[SampledTexture];
     uniformBlocks:[UniformBlock];
     uniformValues:[UniformValue];
+    debugInfo:common.DebugInfo;
 }
 
 root_type ModelSingle;

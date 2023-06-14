@@ -36,6 +36,8 @@ static AppInfo_s appInfo{
 
 AppInfo_s *AppInitModule() { return &appInfo; }
 
+extern std::map<uint32, std::string (*)(BinReaderRef)> STRIPPERS;
+
 struct SubStream {
   size_t offset;
   uint32 size;
@@ -50,7 +52,17 @@ struct Stream {
   Stream(std::string &&path)
       : streamPath(std::move(path)), streamStore(streamPath) {}
 
-  SubStream SendStream(std::istream &str) {
+  SubStream SendStream(std::istream &str, uint32 clHash ) {
+    if (STRIPPERS.contains(clHash)) {
+      auto stripped = STRIPPERS.at(clHash)(str);
+      std::lock_guard lg(mtx);
+      SubStream retVal;
+      retVal.offset = streamStore.Tell();
+      retVal.size = stripped.size();
+      streamStore.WriteContainer(stripped);
+      return retVal;
+    }
+
     std::lock_guard lg(mtx);
     const size_t inputSize = BinReaderRef(str).GetSize();
     char buffer[0x10000];
@@ -154,7 +166,7 @@ struct MakeContext : AppPackContext {
     IFile curFile;
     curFile.info.type = clHash;
     curFile.info.name = JenkinsHash3_(path.substr(0, dot));
-    curFile.location = streams.at(clHash).SendStream(stream);
+    curFile.location = streams.at(clHash).SendStream(stream, clHash);
 
     {
       std::lock_guard lg(mtx);
