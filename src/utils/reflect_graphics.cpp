@@ -1,5 +1,6 @@
 #include "reflected/model_single.fbs.hpp"
 #include "reflected/texture.fbs.hpp"
+#include "reflected/ui_frame.fbs.hpp"
 #include "reflected/vertex.fbs.hpp"
 #include "spike/crypto/jenkinshash.hpp"
 #include "utils/reflect.hpp"
@@ -15,6 +16,7 @@ std::span<const TypeInfo> GetGraphicsTables() {
       {pg::TextureTypeTable(), JenkinsHash_("prime::graphics::Texture")},
       {pg::VertexArrayTypeTable(),
        JenkinsHash_("prime::graphics::VertexArray")},
+      {pg::UIFrameTypeTable(), JenkinsHash_("prime::graphics::UIFrame")},
   };
 
   return GRAPHICS_TABLES;

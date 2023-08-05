@@ -1,0 +1,26 @@
+
+namespace prime.graphics;
+
+struct ImArg1U (native_default:"uint64") {
+    data:uint64;
+}
+
+struct ImArg1I (native_default:"int64") {
+    data:int64;
+}
+
+struct ImArg1F (native_default:"float") {
+    data:float;
+}
+
+struct ImSignature (native_default:"uint64") {
+    addr_:uint64;
+}
+
+struct ImPointer (native_default:"int32") {
+    varHash:uint32;
+}
+
+struct UIFrameCtx {
+    data:uint64;
+}

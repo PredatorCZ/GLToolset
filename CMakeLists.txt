@@ -68,6 +68,7 @@ build_target(
   src/graphics/program.cpp
   src/graphics/frame_buffer.cpp
   src/graphics/post_process.cpp
+  src/graphics/ui_frame.cpp
 
   src/utils/shader_preprocessor.cpp
   src/utils/reflect.cpp
@@ -75,12 +76,14 @@ build_target(
   src/utils/converters.cpp
   LINKS
   prime_converters
+  ImGui
   flatbuffers
   simplecpp)
 
 target_include_directories(prime PUBLIC src/shaders)
 
 add_subdirectory(gltex_view)
+add_subdirectory(frame_designer)
 
 add_spike_subdir(gltex)
 add_spike_subdir(glmod)

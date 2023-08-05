@@ -36,6 +36,11 @@ COMMAND flatbuffers::flatc ${FLATC_GEN}
 COMMAND flatbuffers::flatc ${FLATC_GEN}
   --cpp-include common/resource.hpp
   ${CMAKE_CURRENT_SOURCE_DIR}/common/resource_var.fbs
+COMMAND flatbuffers::flatc ${FLATC_GEN};--gen-object-api;--scoped-enums
+  --cpp-include debug.fbs.hpp
+  --cpp-include common/resource.hpp
+  #--cpp-include imgui.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/graphics/ui_frame.fbs
 COMMAND flatbuffers::flatc ${FLATC_GEN};--gen-object-api
   ${CMAKE_CURRENT_SOURCE_DIR}/common/debug.fbs
 COMMAND flatbuffers::flatc ${FLATC_REFLECT}
@@ -54,6 +59,10 @@ COMMAND flatbuffers::flatc ${FLATC_REFLECT}
   ${CMAKE_CURRENT_SOURCE_DIR}/graphics/glenum.idl.fbs
   ${CMAKE_CURRENT_SOURCE_DIR}/graphics/texture_flags.idl.fbs
   ${CMAKE_CURRENT_SOURCE_DIR}/graphics/vertex_type.idl.fbs
+  ${CMAKE_CURRENT_SOURCE_DIR}/graphics/ui_internal.idl.fbs
+  ${CMAKE_CURRENT_SOURCE_DIR}/graphics/ui_frame.fbs
+  ${CMAKE_CURRENT_SOURCE_DIR}/graphics/imgui.idl.fbs
+
 COMMAND flatbuffers::flatc ${FLATC_NATIVE}
   ${CMAKE_CURRENT_SOURCE_DIR}/common/debug.fbs
   ${CMAKE_CURRENT_SOURCE_DIR}/common/resource_var.fbs
@@ -70,4 +79,7 @@ COMMAND flatbuffers::flatc ${FLATC_NATIVE}
   ${CMAKE_CURRENT_SOURCE_DIR}/graphics/glenum.idl.fbs
   ${CMAKE_CURRENT_SOURCE_DIR}/graphics/texture_flags.idl.fbs
   ${CMAKE_CURRENT_SOURCE_DIR}/graphics/vertex_type.idl.fbs
+  ${CMAKE_CURRENT_SOURCE_DIR}/graphics/ui_internal.idl.fbs
+  ${CMAKE_CURRENT_SOURCE_DIR}/graphics/ui_frame.fbs
+  ${CMAKE_CURRENT_SOURCE_DIR}/graphics/imgui.idl.fbs
 )

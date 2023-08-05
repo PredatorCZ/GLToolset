@@ -1,0 +1,24 @@
+struct ImVec2 {
+    x:float;
+    y:float;
+}
+
+struct ImVec4 {
+    x:float;
+    y:float;
+    z:float;
+    w:float;
+}
+
+enum ImGuiDataType : uint8 {
+    S8,
+    U8,
+    S16,
+    U16,
+    S32,
+    U32,
+    S64,
+    U64,
+    Float,
+    Double,
+}

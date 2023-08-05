@@ -1,3 +1,4 @@
+#include "native/gui_frame.fbs.hpp"
 #include "native/model_single.fbs.hpp"
 #include "native/vertex.fbs.hpp"
 #include "spike/crypto/jenkinshash.hpp"
@@ -23,4 +24,6 @@ std::map<uint32, std::string (*)(BinReaderRef)> STRIPPERS{
      StripResource<prime::graphics::ModelSingle>},
     {JenkinsHash_("prime::graphics::VertexArray"),
      StripResource<prime::graphics::VertexArray>},
+    {JenkinsHash_("prime::graphics::GUIFrame"),
+     StripResource<prime::graphics::GUIFrame>},
 };

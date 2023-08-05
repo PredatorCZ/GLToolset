@@ -2,6 +2,7 @@
 #include "graphics/program.hpp"
 #include "graphics/sampler.hpp"
 #include "graphics/texture.hpp"
+#include "graphics/ui_frame.hpp"
 #include "graphics/vertex.hpp"
 #include <cstring>
 #include <map>
@@ -29,7 +30,8 @@ static const auto REGISTRY{
     BuildRegistry<char, pg::Sampler, pg::ModelSingle, pg::UniformBlockData,
                   pg::Texture, pg::TextureStream<0>, pg::TextureStream<1>,
                   pg::TextureStream<2>, pg::TextureStream<3>, pg::VertexArray,
-                  pg::VertexIndexData, pg::VertexVshData, pg::VertexPshData>()};
+                  pg::VertexIndexData, pg::VertexVshData, pg::VertexPshData,
+                  pg::UIFrame>()};
 
 uint32 prime::common::GetClassFromExtension(std::string_view ext) {
   prime::common::ExtString key;
