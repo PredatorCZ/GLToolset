@@ -1,7 +1,7 @@
-#include "datas/binreader_stream.hpp"
-#include "datas/jenkinshash.hpp"
 #include "native/model_single.fbs.hpp"
 #include "native/vertex.fbs.hpp"
+#include "spike/crypto/jenkinshash.hpp"
+#include "spike/io/binreader_stream.hpp"
 #include <map>
 
 template <class FBClass> std::string StripResource(BinReaderRef rd) {

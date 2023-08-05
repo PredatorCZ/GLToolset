@@ -6,11 +6,11 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 
-#include "datas/binreader.hpp"
-#include "datas/binwritter.hpp"
-#include "datas/fileinfo.hpp"
-#include "datas/flags.hpp"
-#include "datas/master_printer.hpp"
+#include "spike/io/binreader.hpp"
+#include "spike/io/binwritter.hpp"
+#include "spike/io/fileinfo.hpp"
+#include "spike/master_printer.hpp"
+#include "spike/type/flags.hpp"
 #include <optional>
 #include <variant>
 

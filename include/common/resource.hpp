@@ -1,6 +1,6 @@
 #pragma once
 #include "core.hpp"
-#include "datas/jenkinshash3.hpp"
+#include "spike/crypto/jenkinshash3.hpp"
 #include <string>
 
 namespace prime::common {
@@ -97,7 +97,7 @@ void *GetResourceHandle(ResourceData &data);
 template <class C> C *LinkResource(ResourceHash &resourceHash) {
   auto &resData = LoadResource(resourceHash);
   ResourcePtr<C> mut;
-  mut.resourcePtr = static_cast<C*>(GetResourceHandle(resData));
+  mut.resourcePtr = static_cast<C *>(GetResourceHandle(resData));
   resourceHash = mut.resourceHash;
   resData.numRefs++;
 

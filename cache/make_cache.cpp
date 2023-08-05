@@ -18,12 +18,12 @@
 #include "common/array.hpp"
 #include "common/core.hpp"
 #include "common/resource.hpp"
-#include "datas/app_context.hpp"
-#include "datas/binreader.hpp"
-#include "datas/binwritter.hpp"
-#include "datas/crc32.hpp"
-#include "datas/stat.hpp"
 #include "project.h"
+#include "spike/app_context.hpp"
+#include "spike/crypto/crc32.hpp"
+#include "spike/io/binreader.hpp"
+#include "spike/io/binwritter.hpp"
+#include "spike/io/stat.hpp"
 #include <map>
 #include <mutex>
 #include <set>
@@ -52,7 +52,7 @@ struct Stream {
   Stream(std::string &&path)
       : streamPath(std::move(path)), streamStore(streamPath) {}
 
-  SubStream SendStream(std::istream &str, uint32 clHash ) {
+  SubStream SendStream(std::istream &str, uint32 clHash) {
     if (STRIPPERS.contains(clHash)) {
       auto stripped = STRIPPERS.at(clHash)(str);
       std::lock_guard lg(mtx);

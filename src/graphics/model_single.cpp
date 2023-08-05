@@ -1,7 +1,7 @@
 #include "common/camera.hpp"
-#include "datas/master_printer.hpp"
 #include "graphics/sampler.hpp"
 #include "graphics/texture.hpp"
+#include "spike/master_printer.hpp"
 #include "utils/flatbuffers.hpp"
 #include "utils/instancetm_builder.hpp"
 #include "vertex.fbs.hpp"
@@ -104,15 +104,19 @@ void Draw(const ModelSingle &model) {
       using UniformSetter = void (*)(const UniformValue &);
 
       static const UniformSetter uniformSetters[]{
-          [](const UniformValue &u) { glUniform1f(u.location(), (*u.data())[0]); },
+          [](const UniformValue &u) {
+            glUniform1f(u.location(), (*u.data())[0]);
+          },
           [](const UniformValue &u) {
             glUniform2f(u.location(), (*u.data())[0], (*u.data())[1]);
           },
           [](const UniformValue &u) {
-            glUniform3f(u.location(), (*u.data())[0], (*u.data())[1], (*u.data())[2]);
+            glUniform3f(u.location(), (*u.data())[0], (*u.data())[1],
+                        (*u.data())[2]);
           },
           [](const UniformValue &u) {
-            glUniform4f(u.location(), (*u.data())[0], (*u.data())[1],(*u.data())[2], (*u.data())[3]);
+            glUniform4f(u.location(), (*u.data())[0], (*u.data())[1],
+                        (*u.data())[2], (*u.data())[3]);
           },
       };
 
@@ -260,7 +264,8 @@ void RebuildProgram(ModelSingle &model) {
 
   auto &intro = CreateProgram(*model.mutable_program(), &secondaryDefs);
   auto runtime = model.mutable_runtime();
-  runtime->mutate_transformIndex(intro.uniformBlockBinds.at("ubInstanceTransforms"));
+  runtime->mutate_transformIndex(
+      intro.uniformBlockBinds.at("ubInstanceTransforms"));
 
   if (auto textures = model.textures()) {
     for (auto t_ : *textures) {

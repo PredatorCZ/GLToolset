@@ -5,8 +5,13 @@ struct ReferenceRemap {
     index:uint32;
 }
 
+table StringHash {
+    hash:uint32(key);
+    data:string;
+}
+
 table DebugInfo {
     references:[string];
     refTypes:[ReferenceRemap];
-    strings:[string];
+    strings:[StringHash];
 }

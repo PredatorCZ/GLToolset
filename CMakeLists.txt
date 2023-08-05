@@ -2,30 +2,20 @@ cmake_minimum_required(VERSION 3.3)
 
 set(CMAKE_CXX_STANDARD 20)
 project(GLToolset VERSION 1.0)
-
-if(NOT MSVC)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wl,--no-undefined")
-endif()
+add_compile_options(-Wall -Wextra -Wl,--no-undefined)
 
 set(TPD_PATH ${CMAKE_CURRENT_SOURCE_DIR}/3rd_party)
-set(BUILD_SHARED_LIBS
-    ON
-    CACHE BOOL "")
-set(BUILD_STATIC_OBJECTS
-    OFF
-    CACHE BOOL "")
-set(NO_OBJECTS
-    ON
-    CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS ON)
+option(NO_OBJECTS "" ON)
+option(CLI "" ON)
+option(GLTF "" OFF)
 
-add_subdirectory(${TPD_PATH}/precore)
+add_subdirectory(${TPD_PATH}/spike)
 include(targetex)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_BINARY_DIR}/fbs)
 
-add_subdirectory(${TPD_PATH}/precore/spike ${CMAKE_CURRENT_BINARY_DIR}/spike)
-add_subdirectory(${TPD_PATH}/precore/gltf)
-set_target_properties(spike PROPERTIES OUTPUT_NAME gl_toolset)
+set_target_properties(spike_cli PROPERTIES OUTPUT_NAME gl_toolset)
 
 add_subdirectory(${TPD_PATH}/imgui)
 add_subdirectory(${TPD_PATH}/simplecpp)
@@ -53,7 +43,7 @@ build_target(
   STB_IMAGE_IMPLEMENTATION
   STB_IMAGE_RESIZE_IMPLEMENTATION
   LINKS
-  precore
+  spike
   PROPERTIES
   POSITION_INDEPENDENT_CODE
   ON

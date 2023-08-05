@@ -1,5 +1,5 @@
 #pragma once
-#include "datas/internal/sc_architecture.hpp"
+#include "spike/util/detail/sc_architecture.hpp"
 
 namespace prime::graphics {
 enum class VertexType : uint8 {

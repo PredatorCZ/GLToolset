@@ -1,5 +1,5 @@
 #include "graphics/sampler.hpp"
-#include "datas/vectors.hpp"
+#include "spike/type/vectors.hpp"
 #include <GL/glew.h>
 #include <map>
 

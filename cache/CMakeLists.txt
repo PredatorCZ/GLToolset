@@ -12,7 +12,7 @@ build_target(
   make_cache.cpp
   ../src/common/registry.cpp
   LINKS
-  precore
+  spike
   zstd
   AUTHOR
   "Lukas Cone"

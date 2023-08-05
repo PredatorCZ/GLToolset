@@ -1,6 +1,6 @@
 #pragma once
 #include "common/core.hpp"
-#include "datas/flags.hpp"
+#include "spike/type/flags.hpp"
 
 namespace prime::common {
 union ResourceHash;

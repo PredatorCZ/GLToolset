@@ -1,9 +1,9 @@
 #include "common/resource.hpp"
-#include "datas/app_context.hpp"
-#include "datas/binreader.hpp"
-#include "datas/binwritter.hpp"
-#include "datas/directory_scanner.hpp"
-#include "datas/stat.hpp"
+#include "spike/app_context.hpp"
+#include "spike/io/binreader.hpp"
+#include "spike/io/binwritter.hpp"
+#include "spike/io/directory_scanner.hpp"
+#include "spike/io/stat.hpp"
 #include <memory>
 
 namespace {
@@ -108,6 +108,10 @@ struct Context : AppContext {
   }
 
   AppExtractContext *ExtractContext() override {
+    throw std::logic_error("Unsupported call");
+  }
+
+  AppExtractContext *ExtractContext(std::string_view) override {
     throw std::logic_error("Unsupported call");
   }
 

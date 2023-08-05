@@ -1,6 +1,6 @@
 #pragma once
-#include "datas/except.hpp"
-#include "datas/jenkinshash.hpp"
+#include "spike/crypto/jenkinshash.hpp"
+#include "spike/except.hpp"
 #include <string_view>
 
 #define HASH_CLASS(...)                                                        \

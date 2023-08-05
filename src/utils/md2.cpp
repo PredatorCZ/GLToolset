@@ -1,11 +1,11 @@
-#include "datas/app_context.hpp"
-#include "datas/binreader_stream.hpp"
-#include "datas/binwritter_stream.hpp"
-#include "datas/master_printer.hpp"
-#include "datas/matrix44.hpp"
-#include "datas/pointer.hpp"
-#include "datas/vectors_simd.hpp"
 #include "mikktspace.h"
+#include "spike/app_context.hpp"
+#include "spike/io/binreader_stream.hpp"
+#include "spike/io/binwritter_stream.hpp"
+#include "spike/master_printer.hpp"
+#include "spike/type/matrix44.hpp"
+#include "spike/type/pointer.hpp"
+#include "spike/type/vectors_simd.hpp"
 #include <map>
 #include <vector>
 

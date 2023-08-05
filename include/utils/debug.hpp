@@ -29,9 +29,11 @@ struct ResourceDebug {
 
   flatbuffers::Offset<common::DebugInfo>
   Build(flatbuffers::FlatBufferBuilder &builder) {
-    decltype(builder.CreateVectorOfStrings({})) strsPtr;
+    decltype(builder.CreateVectorOfStrings({})) refsPtr;
     flatbuffers::uoffset_t refTypesPtr;
-    decltype(strsPtr) refsPtr;
+    flatbuffers::Offset<
+        flatbuffers::Vector<flatbuffers::Offset<prime::common::StringHash>>>
+        strsPtr;
 
     if (!refTypes.empty()) {
       builder.StartVector(refTypes.size(), sizeof(common::ReferenceRemap));
@@ -44,8 +46,17 @@ struct ResourceDebug {
     }
 
     if (!strings.empty()) {
-      std::vector<std::string> stringsVec(strings.begin(), strings.end());
-      strsPtr = builder.CreateVectorOfStrings(stringsVec);
+      std::vector<flatbuffers::Offset<common::StringHash>> ptrs;
+
+      for (auto &s : strings) {
+        auto strPtr = builder.CreateString(s);
+        common::StringHashBuilder strHash(builder);
+        strHash.add_data(strPtr);
+        strHash.add_hash(JenkinsHash_(s));
+        ptrs.emplace_back(strHash.Finish());
+      }
+
+      strsPtr = builder.CreateVectorOfSortedTables(&ptrs);
     }
 
     common::DebugInfoBuilder debugBuilder(builder);

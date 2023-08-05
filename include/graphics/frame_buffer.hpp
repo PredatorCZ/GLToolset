@@ -1,5 +1,5 @@
 #pragma once
-#include "datas/supercore.hpp"
+#include "spike/util/supercore.hpp"
 #include <vector>
 
 namespace prime::graphics {

@@ -1,5 +1,5 @@
 #pragma once
-#include "datas/internal/sc_architecture.hpp"
+#include "spike/util/detail/sc_architecture.hpp"
 #include <string>
 
 namespace flatbuffers {

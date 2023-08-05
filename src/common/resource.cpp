@@ -1,6 +1,6 @@
 #include "common/resource.hpp"
-#include "datas/binreader.hpp"
-#include "datas/fileinfo.hpp"
+#include "spike/io/binreader.hpp"
+#include "spike/io/fileinfo.hpp"
 #include <map>
 
 namespace prime::utils {

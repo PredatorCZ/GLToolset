@@ -15,10 +15,10 @@
     along with this program.If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "datas/app_context.hpp"
-#include "utils/converters.hpp"
-#include "datas/reflector.hpp"
 #include "project.h"
+#include "spike/app_context.hpp"
+#include "spike/reflect/reflector.hpp"
+#include "utils/converters.hpp"
 
 std::string_view filters[]{".jpeg$", ".jpg$", ".bmp$", ".psd$",
                            ".tga$",  ".gif$", ".hdr$", ".pic$",
@@ -27,7 +27,8 @@ std::string_view filters[]{".jpeg$", ".jpg$", ".bmp$", ".psd$",
 static AppInfo_s appInfo{
     .filteredLoad = true,
     .header = GLTEX_DESC " v" GLTEX_VERSION ", " GLTEX_COPYRIGHT "Lukas Cone",
-    .settings = reinterpret_cast<ReflectorFriend *>(prime::utils::ProcessImageSettings()),
+    .settings = reinterpret_cast<ReflectorFriend *>(
+        prime::utils::ProcessImageSettings()),
     .filters = filters,
 };
 

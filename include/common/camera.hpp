@@ -1,5 +1,5 @@
 #pragma once
-#include "datas/supercore.hpp"
+#include "spike/util/supercore.hpp"
 #include <glm/gtx/dual_quaternion.hpp>
 
 namespace prime::common {
