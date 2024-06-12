@@ -1,13 +1,12 @@
 uniform vec4 v4localPos;
 out vec2 psTexCoord;
 
-const vec4 vertices[6] = vec4[6](
-    vec4(-1, -1, 0, 1), //
-    vec4(1,  -1, 1, 1), //
-    vec4(1,  1,  1, 0), //
-    vec4(1,  1,  1, 0), //
-    vec4(-1, 1,  0, 0), //
-    vec4(-1, -1, 0, 1)  //
+const vec4 vertices[6] = vec4[6](vec4(-1, -1, 0, 1), //
+vec4(1, -1, 1, 1), //
+vec4(1, 1, 1, 0), //
+vec4(1, 1, 1, 0), //
+vec4(-1, 1, 0, 0), //
+vec4(-1, -1, 0, 1)  //
 );
 
 void main() {

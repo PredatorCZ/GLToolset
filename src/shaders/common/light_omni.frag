@@ -1,7 +1,7 @@
 #include "light_omni.h.glsl"
 
-vec3 diffuse = vec3(0.f);
-vec3 specular = vec3(0.f);
+vec3 diffuse = vec3(0.);
+vec3 specular = vec3(0.);
 
 struct LightData {
     vec3 color;
@@ -42,7 +42,7 @@ void ComputeLights(vec3 normal, float specLevel, float specPower) {
     for(int l = 0; l < maxNumLights; l++) {
         SpotLight curSpotLight = spotLight[l];
 
-        if(curSpotLight.cutOffBegin > 0.1f) {
+        if(curSpotLight.cutOffBegin > 0.1) {
             LightData lightData = GetLight(inLights.spotLightPos[l], normal, curSpotLight.color, curSpotLight.attenuation, specPower, specLevel);
 
             float theta = dot(lightData.direction, inLights.spotLightDir[l]);

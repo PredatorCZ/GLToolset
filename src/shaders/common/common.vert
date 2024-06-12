@@ -13,43 +13,43 @@
 #endif
 
 struct Transform {
-    vec4 indexedModel[2];
-    vec3 indexedInflate;
+  vec4 indexedModel[2];
+  vec3 indexedInflate;
 };
 
 #ifdef INSTANCED
 readonly buffer InstanceTransforms {
 #ifdef VS_NUMUVTMS
-  vec4 uvTransform[VS_NUMUVTMS];
+vec4 uvTransform[VS_NUMUVTMS];
 #endif
-  Transform transforms[];
+Transform transforms[];
 };
 
 vec3 GetSingleModelTransform(vec4 pos, int index) {
-    const int instanceStride = VS_NUMBONES;
-    return DQTransformPoint(transforms[gl_InstanceID * instanceStride + index].indexedModel, pos.xyz * transforms[gl_InstanceID * instanceStride + index].indexedInflate);
+const int instanceStride = VS_NUMBONES;
+return DQTransformPoint(transforms[gl_InstanceID * instanceStride + index].indexedModel, pos.xyz * transforms[gl_InstanceID * instanceStride + index].indexedInflate);
 }
 #else
 uniform ubInstanceTransforms {
 #ifdef VS_NUMUVTMS
-  vec4 uvTransform[VS_NUMUVTMS];
+vec4 uvTransform[VS_NUMUVTMS];
 #endif
-  Transform transforms[VS_NUMBONES];
+Transform transforms[VS_NUMBONES];
 };
 
 vec3 GetSingleModelTransform(vec4 pos, int index) {
-    return DQTransformPoint(transforms[index].indexedModel, pos.xyz * transforms[index].indexedInflate);
+return DQTransformPoint(transforms[index].indexedModel, pos.xyz * transforms[index].indexedInflate);
 }
 #endif
 vec3 GetModelSpace(vec4 modelSpace) {
-    vec3 finalSpace;
+vec3 finalSpace;
 #if VS_NUMBONES > 1
         // todo skin
 #else
-    finalSpace = GetSingleModelTransform(modelSpace, 0);
+finalSpace = GetSingleModelTransform(modelSpace, 0);
 #endif
 
-    return finalSpace;
+return finalSpace;
 }
 
 layout(location = 0) in vec4 inPos;

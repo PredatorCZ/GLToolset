@@ -28,13 +28,13 @@ void SetUVs() {
         const int remap0 = uvTransformRemap[tb];
         const int remap1 = uvTransformRemap[tb + 1];
 
-        if (remap0 < 0) {
+        if(remap0 < 0) {
             psTexCoord[tb] = inTexCoord4[t].xy;
         } else {
             psTexCoord[tb] = uvTransform[remap0].xy + inTexCoord4[t].xy * uvTransform[remap0].zw;
         }
 
-        if (remap1 < 0) {
+        if(remap1 < 0) {
             psTexCoord[tb + 1] = inTexCoord4[t].zw;
         } else {
             psTexCoord[tb + 1] = uvTransform[remap1].xy + inTexCoord4[t].zw * uvTransform[remap1].zw;
@@ -46,7 +46,7 @@ void SetUVs() {
     const int idx2 = maxNumUVs4 * 2;
     const int remap = uvTransformRemap[idx2];
 
-    if (remap < 0) {
+    if(remap < 0) {
         psTexCoord[idx2] = inTexCoord2;
     } else {
         psTexCoord[idx2] = uvTransform[remap].xy + inTexCoord2 * uvTransform[remap].zw;
