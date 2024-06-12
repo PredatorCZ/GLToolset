@@ -1,44 +1,33 @@
-#include "graphics/model_single.hpp"
-#include "graphics/program.hpp"
-#include "graphics/sampler.hpp"
-#include "graphics/texture.hpp"
-#include "graphics/ui_frame.hpp"
-#include "graphics/vertex.hpp"
+#include "common/core.hpp"
 #include <cstring>
 #include <map>
 #include <string_view>
 
-template <class C> auto MakePairEH() {
-  return std::make_pair(prime::common::GetClassExtension<C>(),
-                        prime::common::GetClassHash<C>());
-}
+auto &RegistryEH() {
+  static std::map<prime::common::ExtString, uint32> REGISTRY_EH;
+  return REGISTRY_EH;
+};
 
-template <class C> auto MakePairHE() {
-  return std::make_pair(prime::common::GetClassHash<C>(),
-                        prime::common::GetClassExtension<C>());
-}
-
-template <class... C> auto BuildRegistry() {
-  return std::make_pair(
-      std::map<prime::common::ExtString, uint32>{MakePairEH<C>()...},
-      std::map<uint32, prime::common::ExtString>{MakePairHE<C>()...});
-}
-
-namespace pg = prime::graphics;
-
-static const auto REGISTRY{
-    BuildRegistry<char, pg::Sampler, pg::ModelSingle, pg::UniformBlockData,
-                  pg::Texture, pg::TextureStream<0>, pg::TextureStream<1>,
-                  pg::TextureStream<2>, pg::TextureStream<3>, pg::VertexArray,
-                  pg::VertexIndexData, pg::VertexVshData, pg::VertexPshData,
-                  pg::UIFrame>()};
+auto &RegistryHE() {
+  static std::map<uint32, prime::common::ExtString> REGISTRY_HE;
+  return REGISTRY_HE;
+};
 
 uint32 prime::common::GetClassFromExtension(std::string_view ext) {
   prime::common::ExtString key;
   memcpy(key.c, ext.data(), std::min(sizeof(key) - 1, ext.size()));
-  return REGISTRY.first.at(key);
+  return RegistryEH().at(key);
 }
 
 std::string_view prime::common::GetExtentionFromHash(uint32 hash) {
-  return REGISTRY.second.at(hash);
+  return RegistryHE().at(hash);
 }
+
+uint32 prime::common::detail::RegisterClass(prime::common::ExtString ext,
+                                            uint32 obj) {
+  RegistryEH().emplace(ext, obj);
+  RegistryHE().emplace(obj, ext);
+  return obj;
+}
+
+REGISTER_CLASS(char);

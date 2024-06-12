@@ -119,6 +119,113 @@ struct RawImageData {
   }
 };
 
+float RGBtoHue(Vector4A16 color) {
+  Vector4A16 row1(0, 2, 4, 0);
+  Vector4A16 row2(color.y, color.z, color.x, 0);
+  Vector4A16 row3(color.z, color.x, color.y, 0);
+  Vector4A16 comp1 = (row1 + (row2 - row3)) / 6;
+
+  float retval;
+
+  if (color.x == 1.f) {
+    retval = comp1.x;
+  } else if (color.y == 1.f) {
+    retval = comp1.y;
+  } else if (color.z == 1.f) {
+    retval = comp1.z;
+  } else {
+    throw std::logic_error("Float compare error");
+  }
+
+  if (retval < 0.f) {
+    retval += 1.f;
+  }
+
+  return retval;
+}
+
+struct PixelBlock4x4 {
+  UCVector4 data[16];
+};
+
+struct Histogram3 {
+  UIVector values[0x100];
+};
+
+PixelBlock4x4 RGBToHSL(PixelBlock4x4 block) {
+  float avgHue = 0;
+  float avgCount = 0;
+  Vector offsetScaleHue[16];
+  size_t curItem = 0;
+
+  for (auto &b : block.data) {
+    float offset = std::min(std::min(b.x, b.y), b.z);
+    float upperBound = std::max(std::max(b.x, b.y), b.z);
+    float scale = upperBound - offset;
+    float hue = 0.f;
+    float lightness = (offset + upperBound) * 0.5f;
+    float saturation = 0.f;
+
+    if (scale > 4.f) {
+      if (lightness <= 255.f * 0.5f) {
+        saturation = scale / (upperBound + offset);
+      } else {
+        saturation = scale / (2.f * 255.f - upperBound - offset);
+      }
+
+      Vector4A16 unpacked(b.Convert<float>());
+      unpacked -= offset;
+      unpacked /= scale;
+
+      hue = RGBtoHue(unpacked) * 255.f;
+      avgHue += hue;
+      avgCount += 1.f;
+    } else {
+      scale = 0.f;
+    }
+
+    offsetScaleHue[curItem++] = {scale, offset, hue};
+  }
+
+  curItem = 0;
+  avgHue /= avgCount;
+
+  PixelBlock4x4 outBlock;
+
+  for (auto &b : offsetScaleHue) {
+    if (b.x < 1.f) {
+      b.z = avgHue;
+    }
+
+    Vector4A16 unpacked(b, block.data[curItem].w);
+    unpacked = Vector4A16(_mm_round_ps(unpacked._data, _MM_ROUND_NEAREST));
+    outBlock.data[curItem++] = unpacked.Convert<uint8>();
+  }
+
+  return outBlock;
+}
+
+void ConvertToHSL(RawImageData &data) {
+  for (size_t w = 0; w < data.width; w += 4) {
+    for (size_t h = 0; h < data.height; h += 4) {
+      PixelBlock4x4 block;
+      for (size_t l = 0; l < 4; l++) {
+        const size_t addr = (h + l) * data.width + w;
+        memcpy(block.data + l * 4, static_cast<char *>(data.data) + addr * 4,
+               16);
+      }
+
+      block = RGBToHSL(block);
+
+      for (size_t l = 0; l < 4; l++) {
+        const size_t addr = (h + l) * data.width + w;
+        memcpy(static_cast<char *>(data.data) + addr * 4, block.data + l * 4,
+               16);
+      }
+    }
+  }
+}
+
 RawImageData GetImageData(BinReaderRef rd, bool isNormalMap) {
   auto &settings = Settings();
   stbi_io_callbacks cbs;
@@ -263,6 +370,10 @@ RawImageData GetImageData(BinReaderRef rd, bool isNormalMap) {
   retVal.numChannels = channels;
   retVal.rawSize = x * y * channels;
   retVal.bcSize = (x / 4) * (y / 4);
+
+  /*if (!isNormalMap && settings.rgbType == RGBType::BC1) {
+    ConvertToHSL(retVal);
+  }*/
 
   return retVal;
 }

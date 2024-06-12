@@ -7,7 +7,13 @@
 
 namespace {
 using GLShaderObject = uint32;
+
+struct ShaderObject {
+  uint32 glObject;
+  std::vector<uint32> programs;
+};
 static std::map<uint32, GLShaderObject> shaderObjects;
+static std::map<uint32, std::set<prime::common::ResourceHash>> STAGE_REFERENCES;
 
 static bool CompileShader(prime::graphics::StageObject &s,
                           std::span<std::string_view> defBuffer) {
@@ -124,10 +130,10 @@ prime::graphics::ProgramIntrospection IntrospectShader(uint32 program) {
 
 namespace prime::graphics {
 
-static std::map<uint32, prime::graphics::ProgramIntrospection> programObjects;
+static std::map<uint32, ProgramIntrospection> programObjects;
 
 const ProgramIntrospection &
-CreateProgram(prime::graphics::Program &pgm,
+CreateProgram(Program &pgm, common::ResourceHash referee,
               std::vector<std::string> *secondaryDefs) {
   using ProgramKey = std::array<uint32, 6>;
   static std::map<ProgramKey, uint32> stagesToProgram;
@@ -148,7 +154,8 @@ CreateProgram(prime::graphics::Program &pgm,
   bool fullyCached = true;
 
   for (auto s : *pgm.stages()) {
-    bool cached = CompileShader(*const_cast<prime::graphics::StageObject *>(s),
+    STAGE_REFERENCES[s->resource()].emplace(referee);
+    bool cached = CompileShader(*const_cast<StageObject *>(s),
                                 {defs.data(), defs.size()});
 
     if (!cached) {
@@ -199,3 +206,29 @@ const ProgramIntrospection &ProgramIntrospect(uint32 program) {
   return programObjects.at(program);
 }
 } // namespace prime::graphics
+
+REGISTER_CLASS(prime::graphics::UniformBlockData);
+HASH_CLASS(prime::graphics::Program);
+HASH_CLASS(prime::graphics::StageObject);
+
+template <> class prime::common::InvokeGuard<prime::graphics::StageObject> {
+  static inline const bool data =
+      prime::common::AddResourceHandle<graphics::StageObject>({
+          .Process = nullptr,
+          .Delete = nullptr,
+          .Handle = nullptr,
+          .Update =
+              [](ResourceHash hash) {
+                if (hash.type !=
+                    common::GetClassHash<graphics::StageObject>()) {
+                  return;
+                }
+
+                auto &stages = STAGE_REFERENCES.at(hash.name);
+
+                for (auto &stage : stages) {
+                  GetClassHandle(stage.type).Update(stage);
+                }
+              },
+      });
+};

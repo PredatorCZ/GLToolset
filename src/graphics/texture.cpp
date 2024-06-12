@@ -18,6 +18,7 @@ struct DeferredPayload {
 };
 
 static std::map<uint32, TextureUnit> TEXTURE_UNITS;
+static std::map<uint32, uint32> TEXTURE_REMAPS;
 static std::deque<std::function<void()>> DEFERRED_LOADER_QUEUE[3];
 static uint32 MIN_DEFER_LEVEL = 1;
 static uint32 CLAMP_RES = 4096;
@@ -208,6 +209,10 @@ TextureUnit prime::graphics::LookupTexture(uint32 hash) {
     return TEXTURE_UNITS.at(hash);
   }
 
+  if (TEXTURE_REMAPS.contains(hash)) {
+    return TEXTURE_UNITS.at(TEXTURE_REMAPS.at(hash));
+  }
+
   common::LoadResource(
       common::ResourceHash(hash, common::GetClassHash<graphics::Texture>()));
   return TEXTURE_UNITS.at(hash);
@@ -235,6 +240,7 @@ template <> class prime::common::InvokeGuard<Texture> {
             auto hdr = utils::GetFlatbuffer<Texture>(data);
             auto unit = AddTexture(*hdr, data.hash.name);
             TEXTURE_UNITS.emplace(data.hash.name, unit);
+            TEXTURE_REMAPS.emplace(unit.id, data.hash.name);
           },
       .Delete = nullptr,
       .Handle = [](ResourceData &data) -> void * {
@@ -242,3 +248,9 @@ template <> class prime::common::InvokeGuard<Texture> {
       },
   });
 };
+
+REGISTER_CLASS(prime::graphics::Texture);
+REGISTER_CLASS(prime::graphics::TextureStream<0>);
+REGISTER_CLASS(prime::graphics::TextureStream<1>);
+REGISTER_CLASS(prime::graphics::TextureStream<2>);
+REGISTER_CLASS(prime::graphics::TextureStream<3>);

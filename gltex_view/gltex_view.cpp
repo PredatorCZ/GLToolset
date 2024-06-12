@@ -39,7 +39,7 @@ namespace pg = prime::graphics;
 #include "render_ts.hpp"
 
 void PreloadResources() {
-  pu::SetShadersSourceDir("/home/lukas/github/gltoolset/src/shaders/");
+  pc::AddWorkingFolder("/home/lukas/github/gltoolset/src/shaders/");
   pc::AddSimpleResource<char>("single_texture/main_normal.frag");
   pc::AddSimpleResource<char>("single_texture/main_albedo.frag");
   pc::AddSimpleResource<char>("basics/simple_sprite.vert");
@@ -402,6 +402,7 @@ int main(int, char *argv[]) {
   });*/
 
   while (!glfwWindowShouldClose(window)) {
+    pc::PollUpdates();
     mainProgram->lightSpans.pointLightTMs[0] = lightOrbit * lightOrbit.w;
     *boxObj.localPos =
         glm::vec4(glm::vec3{lightOrbit * lightOrbit.w}, lightScale);
@@ -661,6 +662,7 @@ int main(int, char *argv[]) {
 
       ImGui::SliderFloat("Glow Level", &mainUBData->glowLevel, 0, 10);
       ImGui::SliderFloat("Alpha Cutoff", &mainUBData->alphaCutOff, 0, 1);
+      ImGui::SliderFloat("Hue Rotation", &mainUBData->hueRotation, 0, 1);
       ImGui::SliderInt("Render Buffer", &renderBuffer, 0,
                        canvas.outTextures.size());
     }

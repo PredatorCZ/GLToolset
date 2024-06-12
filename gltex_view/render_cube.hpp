@@ -119,7 +119,10 @@ struct CubeObject : MainShaderProgram {
     auto texPtr =
         const_cast<pg::SampledTexture *>((*model->mutable_textures())[0]);
     texPtr->mutate_texture(textureName);
-    pg::RebuildProgram(*model);
+    pg::RebuildProgram(*model, pc::MakeHash<pg::ModelSingle>(
+                                   flags == pg::TextureFlag::NormalMap
+                                       ? "texture_cube_normal"
+                                       : "texture_cube_albedo"));
   }
 
   void Render() {

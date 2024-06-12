@@ -67,6 +67,9 @@ ResourceData &FindResource(const void *address);
 void AddWorkingFolder(std::string path);
 void FreeResource(ResourceData &resource);
 void ReplaceResource(ResourceData &oldResource, ResourceData &newResource);
+std::string ResourcePath(std::string path);
+std::string ResourceWorkingFolder(std::string path);
+std::string ResourceWorkingFolder(ResourceHash object);
 
 // Add resource to global registry for deferred loading
 void AddSimpleResource(ResourceData &&resource);
@@ -76,7 +79,7 @@ template <class C> ResourceHash AddSimpleResource(const std::string &path) {
 }
 
 // Load resource data, that are registered via AddSimpleResource
-ResourceData &LoadResource(ResourceHash hash);
+ResourceData &LoadResource(ResourceHash hash, bool reload = false);
 
 template <class C> struct InvokeGuard;
 
@@ -84,6 +87,7 @@ struct ResourceHandle {
   void (*Process)(ResourceData &res);
   void (*Delete)(ResourceData &res);
   void *(*Handle)(ResourceData &res);
+  void (*Update)(ResourceHash object) = nullptr;
 };
 
 bool AddResourceHandle(uint32 hash, ResourceHandle handle);
@@ -93,6 +97,7 @@ template <class C> bool AddResourceHandle(ResourceHandle handle) {
 }
 
 void *GetResourceHandle(ResourceData &data);
+const ResourceHandle &GetClassHandle(uint32 classHash);
 
 template <class C> C *LinkResource(ResourceHash &resourceHash) {
   auto &resData = LoadResource(resourceHash);
@@ -105,5 +110,7 @@ template <class C> C *LinkResource(ResourceHash &resourceHash) {
 }
 
 void UnlinkResource(Resource *ptr);
+
+void PollUpdates();
 
 } // namespace prime::common

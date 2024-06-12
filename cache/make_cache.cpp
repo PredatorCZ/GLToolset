@@ -135,7 +135,7 @@ struct MakeContext : AppPackContext {
   std::vector<IFile> files;
   std::set<std::string> fileNames;
 
-  MakeContext(std::string baseFile_, const AppPackStats &)
+  MakeContext(std::string baseFile_)
       : baseFile(std::move(baseFile_)) {}
 
   void SendFile(std::string_view path, std::istream &stream) override {
@@ -277,12 +277,11 @@ struct MakeContext : AppPackContext {
   }
 };
 
-AppPackContext *AppNewArchive(const std::string &folder,
-                              const AppPackStats &stats) {
+AppPackContext *AppNewArchive(const std::string &folder) {
   auto file = folder;
   while (file.back() == '/') {
     file.pop_back();
   }
 
-  return new MakeContext(std::move(file), stats);
+  return new MakeContext(std::move(file));
 }

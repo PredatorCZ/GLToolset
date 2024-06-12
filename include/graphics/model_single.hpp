@@ -1,11 +1,11 @@
 #pragma once
-#include "common/core.hpp"
+#include "common/resource.hpp"
 #include "common/transform.hpp"
 
 namespace prime::graphics {
 struct ModelSingle;
 
-void RebuildProgram(ModelSingle &model);
+void RebuildProgram(ModelSingle &model, common::ResourceHash referee);
 void Draw(const ModelSingle &model);
 void UpdateTransform(ModelSingle &model, const glm::dualquat *tm,
                      const glm::vec3 *scale);

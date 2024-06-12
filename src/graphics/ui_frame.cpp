@@ -462,3 +462,5 @@ template <> class prime::common::InvokeGuard<prime::graphics::UIFrame> {
           },
       });
 };
+
+REGISTER_CLASS(prime::graphics::UIFrame);

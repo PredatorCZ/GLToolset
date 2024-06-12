@@ -167,6 +167,11 @@ struct Context : AppContext {
     return {outFile.BaseStream(), filePath, delimeter};
   }
 
+  NewTexelContext *NewImage(NewTexelContextCreate,
+                            const std::string *) override {
+    throw std::logic_error("Unsupported call");
+  }
+
   Context(const std::string &input) {
     mainFile.Open(input);
     workingFile.Load(input);

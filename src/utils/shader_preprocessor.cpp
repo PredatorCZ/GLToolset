@@ -9,16 +9,21 @@
 #define GL_VERTEX_SHADER 0x8B31
 #define GL_GEOMETRY_SHADER 0x8DD9
 
+static std::map<uint32, std::set<prime::common::ResourceHash>> REFERENCES;
+
+namespace prime::graphics {
+class StageObject;
+}
+
+HASH_CLASS(prime::graphics::StageObject);
+
 namespace prime::utils {
-
-static std::string SHADERS_SOURCE_DIR;
-
 std::string PreProcess(common::ResourceHash object, simplecpp::DUI &dui) {
   simplecpp::OutputList outputList;
   std::vector<std::string> files;
   auto &res = common::LoadResource(object);
   std::stringstream iStr(res.buffer);
-  simplecpp::TokenList rawtokens(iStr, files, SHADERS_SOURCE_DIR, &outputList);
+  simplecpp::TokenList rawtokens(iStr, files, {}, &outputList);
   auto included = simplecpp::load(rawtokens, files, dui, &outputList);
   simplecpp::TokenList outputTokens(files);
   simplecpp::preprocess(outputTokens, rawtokens, files, included, dui,
@@ -56,6 +61,18 @@ std::string PreProcess(common::ResourceHash object, simplecpp::DUI &dui) {
     es::print::FlushAll();
   }
 
+  const std::string includePath = dui.includePaths.front();
+  REFERENCES[object.name].emplace(
+        common::MakeHash<graphics::StageObject>(object.name));
+
+  for (auto &[path_, data] : included) {
+    std::string_view path(path_);
+    path.remove_prefix(includePath.size());
+    const common::ResourceHash pathHash(common::MakeHash<char>(path));
+    REFERENCES[pathHash.name].emplace(
+        common::MakeHash<graphics::StageObject>(object.name));
+  }
+
   std::ostringstream ret;
   ret << "#version 450 core";
 
@@ -83,18 +100,19 @@ std::string PreProcess(common::ResourceHash object, simplecpp::DUI &dui) {
 
 std::string PreprocessShader(uint32 object, uint16 target,
                              std::span<std::string_view> definitions) {
+  const common::ResourceHash resource(common::MakeHash<char>(object));
   simplecpp::DUI dui;
   dui.defines.emplace_back("SHADER");
-  dui.includePaths.emplace_back(SHADERS_SOURCE_DIR);
+  dui.includePaths.emplace_back(common::ResourceWorkingFolder(resource));
 
   switch (target) {
   case GL_VERTEX_SHADER:
     dui.defines.emplace_back("VERTEX");
-    dui.includes.emplace_back(SHADERS_SOURCE_DIR + "common/common.vert");
+    dui.includes.emplace_back(common::ResourcePath("common/common.vert"));
     break;
   case GL_FRAGMENT_SHADER:
     dui.defines.emplace_back("FRAGMENT");
-    dui.includes.emplace_back(SHADERS_SOURCE_DIR + "common/common.frag");
+    dui.includes.emplace_back(common::ResourcePath("common/common.frag"));
     break;
   case GL_GEOMETRY_SHADER:
     dui.defines.emplace_back("GEOMETRY");
@@ -107,10 +125,36 @@ std::string PreprocessShader(uint32 object, uint16 target,
     dui.defines.emplace_back(d);
   }
 
-  return PreProcess(common::MakeHash<char>(object), dui);
+  return PreProcess(resource, dui);
 }
 
-void SetShadersSourceDir(const std::string &path) { SHADERS_SOURCE_DIR = path; }
-const std::string &ShadersSourceDir() { return SHADERS_SOURCE_DIR; }
-
+class ShaderPreprocessor;
 } // namespace prime::utils
+
+HASH_CLASS(prime::utils::ShaderPreprocessor)
+
+template <> class prime::common::InvokeGuard<prime::utils::ShaderPreprocessor> {
+  static inline const bool data =
+      prime::common::AddResourceHandle<prime::utils::ShaderPreprocessor>({
+          .Process = nullptr,
+          .Delete = nullptr,
+          .Handle = nullptr,
+          .Update =
+              [](ResourceHash hash) {
+                if (hash.type > 0) {
+                  return;
+                }
+
+                if (REFERENCES.contains(hash.name)) {
+                  common::LoadResource(common::MakeHash<char>(hash.name), true);
+                  auto &refs = REFERENCES.at(hash.name);
+                  for (auto &ref : refs) {
+                    GetClassHandle(ref.type).Update(ref);
+                  }
+                } else {
+                  GetClassHandle(common::GetClassHash<graphics::StageObject>())
+                      .Update(common::MakeHash<graphics::StageObject>(hash.name));
+                }
+              },
+      });
+};

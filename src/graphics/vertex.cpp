@@ -92,3 +92,8 @@ template <> class prime::common::InvokeGuard<prime::graphics::VertexArray> {
           },
       });
 };
+
+REGISTER_CLASS(prime::graphics::VertexArray);
+REGISTER_CLASS(prime::graphics::VertexIndexData);
+REGISTER_CLASS(prime::graphics::VertexVshData);
+REGISTER_CLASS(prime::graphics::VertexPshData);

@@ -142,4 +142,16 @@ template <class C> void ValidateClass(const C &item) {
 
 uint32 GetClassFromExtension(std::string_view ext);
 std::string_view GetExtentionFromHash(uint32 hash);
+
+namespace detail {
+uint32 RegisterClass(ExtString ext, uint32 obj);
+template <class C> class RegistryInvokeGuard;
+} // namespace detail
 } // namespace prime::common
+
+#define REGISTER_CLASS(...)                                                    \
+  template <> class prime::common::detail::RegistryInvokeGuard<__VA_ARGS__> {  \
+    static inline const uint32 data =                                          \
+        RegisterClass(prime::common::GetClassExtension<__VA_ARGS__>(),         \
+                      prime::common::GetClassHash<__VA_ARGS__>());             \
+  }

@@ -48,3 +48,5 @@ void SetDefaultAnisotropy(uint32 newValue) {
 uint32 LookupSampler(uint32 hash) { return samplerUnits.at(hash); }
 
 } // namespace prime::graphics
+
+REGISTER_CLASS(prime::graphics::Sampler);

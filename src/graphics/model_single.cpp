@@ -10,7 +10,7 @@
 #include "model_single.fbs.hpp"
 
 namespace prime::graphics {
-static void AddModelSingle(ModelSingle &hdr) {
+static void AddModelSingle(ModelSingle &hdr, common::ResourceHash referee) {
   const VertexArray *verts = nullptr;
 
   if (hdr.vertexArray_type() == common::ResourceVar_hash) {
@@ -23,7 +23,7 @@ static void AddModelSingle(ModelSingle &hdr) {
     verts = *static_cast<VertexArray *const *>(hdr.mutable_vertexArray());
   }
 
-  RebuildProgram(hdr);
+  RebuildProgram(hdr, referee);
   auto runtime = hdr.mutable_runtime();
 
   uint32 transformBuffer;
@@ -156,7 +156,9 @@ void UpdateTransform(ModelSingle &model, const glm::dualquat *tm,
   }
 
   size_t i = 0;
-  auto verts = *static_cast<VertexArray *const *>(model.vertexArray());
+  VertexArray *const *vertsPtr =
+      static_cast<VertexArray *const *>(model.vertexArray());
+  VertexArray *verts = *vertsPtr;
   if (auto tms = verts->transforms()) {
     for (auto t : *tms) {
       auto &curtm = spanner.transforms[i++];
@@ -173,7 +175,7 @@ void UpdateTransform(ModelSingle &model, const glm::dualquat *tm,
   glUnmapNamedBuffer(runtime->transformBuffer());
 }
 
-void RebuildProgram(ModelSingle &model) {
+void RebuildProgram(ModelSingle &model, common::ResourceHash referee) {
   bool normalUFlag = false;
   bool normalZFlag = false;
   bool hasNormal = false;
@@ -218,7 +220,9 @@ void RebuildProgram(ModelSingle &model) {
     secondaryDefs.emplace_back("TS_NORMAL_DERIVE_Z");
   }
 
-  auto verts = *static_cast<VertexArray *const *>(model.vertexArray());
+  VertexArray *const *vertsPtr =
+      static_cast<VertexArray *const *>(model.vertexArray());
+  VertexArray *verts = *vertsPtr;
 
   if (auto uvtms = verts->uvTransforms(); uvtms && uvtms->size() > 0) {
     secondaryDefs.emplace_back("VS_NUMUVTMS=" + std::to_string(uvtms->size()));
@@ -262,7 +266,8 @@ void RebuildProgram(ModelSingle &model) {
     break;
   }
 
-  auto &intro = CreateProgram(*model.mutable_program(), &secondaryDefs);
+  auto &intro =
+      CreateProgram(*model.mutable_program(), referee, &secondaryDefs);
   auto runtime = model.mutable_runtime();
   runtime->mutate_transformIndex(
       intro.uniformBlockBinds.at("ubInstanceTransforms"));
@@ -317,16 +322,29 @@ void RebuildProgram(ModelSingle &model) {
 
 template <> class prime::common::InvokeGuard<prime::graphics::ModelSingle> {
   static inline const bool data =
-      prime::common::AddResourceHandle<prime::graphics::ModelSingle>({
+      common::AddResourceHandle<graphics::ModelSingle>({
           .Process =
               [](ResourceData &data) {
-                auto hdr =
-                    utils::GetFlatbuffer<prime::graphics::ModelSingle>(data);
-                prime::graphics::AddModelSingle(*hdr);
+                auto hdr = utils::GetFlatbuffer<graphics::ModelSingle>(data);
+                graphics::AddModelSingle(*hdr, data.hash);
               },
           .Delete = nullptr,
           .Handle = [](ResourceData &data) -> void * {
-            return utils::GetFlatbuffer<prime::graphics::ModelSingle>(data);
+            return utils::GetFlatbuffer<graphics::ModelSingle>(data);
           },
+          .Update =
+              [](ResourceHash hash) {
+                if (hash.type !=
+                    common::GetClassHash<graphics::ModelSingle>()) {
+                  return;
+                }
+
+                graphics::RebuildProgram(
+                    *utils::GetFlatbuffer<graphics::ModelSingle>(
+                        common::LoadResource(hash)),
+                    hash);
+              },
       });
 };
+
+REGISTER_CLASS(prime::graphics::ModelSingle);
