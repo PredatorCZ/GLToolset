@@ -92,5 +92,6 @@ add_spike_subdir(cache)
 
 add_executable(test_curvebatch src/motion/curvebatch_evaluate.cpp)
 target_compile_options(test_curvebatch PRIVATE -msse4 -mavx2 -mfma -O4)
+target_link_libraries(test_curvebatch spike-interface)
 enable_testing()
 add_test(NAME test_curvebatch COMMAND test_curvebatch)
