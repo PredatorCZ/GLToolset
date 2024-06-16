@@ -49,7 +49,7 @@ build_target(
   ON
 )
 
-target_link_libraries(prime_converters ${ISPCTEX_DIR}/kernel_ispc_avx.o ${ISPCTEX_DIR}/kernel_ispc_sse2.o ${ISPCTEX_DIR}/kernel_ispc.o)
+target_link_libraries(prime_converters ${ISPCTEX_DIR}/kernel_ispc_avx2.o ${ISPCTEX_DIR}/kernel_ispc_sse4.o ${ISPCTEX_DIR}/kernel_ispc.o)
 
 build_target(
   NAME
