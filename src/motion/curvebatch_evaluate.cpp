@@ -802,7 +802,11 @@ void BenchDualMult() {
       r = rg0;
     }
     auto startTime = std::chrono::high_resolution_clock::now();
+#ifdef __AVX2__
     DualMult(rg.ymm.f, &rgn->ymm.f, 255);
+#else
+    DualMult(&rg.d->xmm.f, &rgn->d->xmm.f, 255);
+#endif
     auto dur = std::chrono::high_resolution_clock::now() - startTime;
     const size_t cnt =
         std::chrono::duration_cast<std::chrono::nanoseconds>(dur).count();
