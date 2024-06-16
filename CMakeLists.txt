@@ -88,3 +88,9 @@ add_subdirectory(frame_designer)
 add_spike_subdir(gltex)
 add_spike_subdir(glmod)
 add_spike_subdir(cache)
+
+
+add_executable(test_curvebatch src/motion/curvebatch_evaluate.cpp)
+target_compile_options(test_curvebatch PRIVATE -msse4 -mavx2 -mfma -O4)
+enable_testing()
+add_test(NAME test_curvebatch COMMAND test_curvebatch)

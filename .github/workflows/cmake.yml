@@ -1,0 +1,46 @@
+name: build
+
+on:
+  push:
+
+env:
+  BUILD_TYPE: Release
+  SK_VERSION: nover
+
+jobs:
+  ubuntu:
+    runs-on: ubuntu-22.04
+
+    env:
+      CC: gcc-12
+      CXX: g++-12
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure stuff
+        run: |
+          wget https://github.com/ispc/ispc/releases/download/v1.22.0/ispc-v1.22.0-linux.tar.gz
+          tar -xf ispc-v1.22.0-linux.tar.gz
+          install -D ispc-v1.22.0-linux/bin/ispc /usr/local/bin/ispc
+          sudo apt install libflatbuffers-dev libglew-dev libglfw3-dev
+          mkdir ${{github.workspace}}/build
+          cd ${{github.workspace}}/build
+          cmake -DCMAKE_BUILD_TYPE=$BUILD_TYPE ..
+
+      - name: Build
+        working-directory: ${{github.workspace}}/build
+        run: |
+          cmake --build . --target kernel_ispc
+          cmake --build . --target prime_fbs
+          cmake --build . -j 6
+
+      - name: Test
+        working-directory: ${{github.workspace}}/build
+        run: ctest -V
