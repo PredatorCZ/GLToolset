@@ -213,11 +213,15 @@ void RebuildProgram(ModelSingle &model, common::ResourceHash referee) {
   std::vector<std::string> secondaryDefs;
 
   if (normalUFlag) {
-    secondaryDefs.emplace_back("TS_NORMAL_UNORM");
+    secondaryDefs.emplace_back("TS_NORMAL_UNORM=true");
+  } else {
+    secondaryDefs.emplace_back("TS_NORMAL_UNORM=false");
   }
 
   if (normalZFlag) {
-    secondaryDefs.emplace_back("TS_NORMAL_DERIVE_Z");
+    secondaryDefs.emplace_back("TS_NORMAL_DERIVE_Z=true");
+  } else {
+    secondaryDefs.emplace_back("TS_NORMAL_DERIVE_Z=false");
   }
 
   VertexArray *const *vertsPtr =
@@ -238,31 +242,22 @@ void RebuildProgram(ModelSingle &model, common::ResourceHash referee) {
 
       remapsDef.pop_back();
       secondaryDefs.emplace_back(std::move(remapsDef));
-
-      if (numUVs % 2) {
-        secondaryDefs.emplace_back("VS_NUMUVS2=1");
-      } else {
-        secondaryDefs.emplace_back("VS_NUMUVS2=0");
-      }
-
-      if (numUVs > 1) {
-        secondaryDefs.emplace_back("VS_NUMUVS4=" + std::to_string(numUVs / 2));
-      }
+      secondaryDefs.emplace_back("VS_NUMUVS=" + std::to_string(numUVs));
     }
+  } else {
+    secondaryDefs.emplace_back("VS_NUMUVS=1");
+    secondaryDefs.emplace_back("VS_UVREMAPS");
   }
 
   switch (verts->tsType()) {
   case TSType::Matrix:
-    secondaryDefs.emplace_back("TS_TANGENT_ATTR");
-    [[fallthrough]];
-  case TSType::Normal:
-    secondaryDefs.emplace_back("TS_NORMAL_ATTR");
+    secondaryDefs.emplace_back("TS_TYPE=2");
     break;
   case TSType::QTangent:
-    secondaryDefs.emplace_back("TS_TANGENT_ATTR");
-    secondaryDefs.emplace_back("TS_QUAT");
+    secondaryDefs.emplace_back("TS_TYPE=1");
     break;
   default:
+    secondaryDefs.emplace_back("TS_TYPE=0");
     break;
   }
 

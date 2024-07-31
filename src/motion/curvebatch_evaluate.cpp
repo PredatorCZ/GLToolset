@@ -9,6 +9,7 @@ union SReg {
 };
 
 union AReg {
+  SReg r[2];
   __m256 f;
   __m256i i;
 };
@@ -22,6 +23,8 @@ union CacheLine {
   SReg s[4];
   AReg a[2];
   VReg v;
+  float fl[8];
+  float f[16];
 };
 
 #ifdef USE_SHUFFLE
@@ -42,6 +45,19 @@ void Decompose4x32b(SReg input, CacheLine &out) {
 }
 #endif
 
+void CacheLineToPoseTable(CacheLine line, float *poseTable,
+                          const uint32_t *ptIndices) {
+  for (float f : line.f) {
+    poseTable[*ptIndices++] = f;
+  }
+}
+void LowCacheLineToPoseTable(CacheLine line, float *poseTable,
+                             const uint32_t *ptIndices) {
+  for (float f : line.fl) {
+    poseTable[*ptIndices++] = f;
+  }
+}
+
 #ifdef __AVX2__
 void Decompose8x32b(AReg input, CacheLine out[2]) {
   out[0].a[0].i = _mm256_shuffle_epi32(input.i, 0);
@@ -50,9 +66,31 @@ void Decompose8x32b(AReg input, CacheLine out[2]) {
   out[1].a[1].i = _mm256_shuffle_epi32(input.i, 0xff);
 }
 
-void Decompose16x16b(__m128i input[2], CacheLine &out) {
+void Decompose16x16b(const __m128i input[2], CacheLine &out) {
   out.a[0].i = _mm256_cvtepu16_epi32(input[0]);
   out.a[1].i = _mm256_cvtepu16_epi32(input[1]);
+}
+
+void Decompose2x16bLow(const __m128i input[2], CacheLine out[2]) {
+  __m256i line0 = _mm256_cvtepu16_epi32(input[0]);
+  __m256i line1 = _mm256_cvtepu16_epi32(input[1]);
+  line1 = _mm256_slli_epi32(line1, 16);
+
+  AReg lineo;
+  lineo.i = _mm256_or_si256(line0, line1);
+
+  Decompose8x32b(lineo, out);
+}
+
+void Decompose2x16bHigh(const __m128i input[2], CacheLine out[2]) {
+  __m256i line0 = _mm256_cvtepu16_epi32(input[1]);
+  __m256i line1 = _mm256_cvtepu16_epi32(input[0]);
+  line1 = _mm256_slli_epi32(line1, 16);
+
+  AReg lineo;
+  lineo.i = _mm256_or_si256(line0, line1);
+
+  Decompose8x32b(lineo, out);
 }
 
 void Decompose4x16bLow(CacheLine input, CacheLine out[2]) {
@@ -108,21 +146,67 @@ void ConvertCacheline4x4(CacheLine line, CacheLine mask, CacheLine scale,
   }
 }
 
-// Compute W component (4th) for 4 packed quaternions
+void LerpCacheLines(CacheLine lines[2], float delta) {
+  __m256 part00 = _mm256_sub_ps(lines[1].a[0].f, lines[0].a[0].f);
+  __m256 part01 = _mm256_sub_ps(lines[1].a[1].f, lines[0].a[1].f);
+  __m256 deltaV = _mm256_set1_ps(delta);
+
+  lines[0].a[0].f =
+      _mm256_add_ps(lines[0].a[0].f, _mm256_mul_ps(part00, deltaV));
+  lines[0].a[1].f =
+      _mm256_add_ps(lines[0].a[1].f, _mm256_mul_ps(part01, deltaV));
+}
+
+void LerpCacheLine(CacheLine line, float delta) {
+  __m256 part00 = _mm256_sub_ps(line.a[1].f, line.a[0].f);
+  __m256 deltaV = _mm256_set1_ps(delta);
+
+  line.a[0].f = _mm256_add_ps(line.a[0].f, _mm256_mul_ps(part00, deltaV));
+}
+
+void LerpCacheLines2(CacheLine lines[4], float delta) {
+  __m256 part00 = _mm256_sub_ps(lines[2].a[0].f, lines[0].a[0].f);
+  __m256 part01 = _mm256_sub_ps(lines[2].a[1].f, lines[0].a[1].f);
+  __m256 part10 = _mm256_sub_ps(lines[3].a[0].f, lines[1].a[0].f);
+  __m256 part11 = _mm256_sub_ps(lines[3].a[1].f, lines[1].a[1].f);
+  __m256 deltaV = _mm256_set1_ps(delta);
+
+  lines[0].a[0].f =
+      _mm256_add_ps(lines[0].a[0].f, _mm256_mul_ps(part00, deltaV));
+  lines[0].a[1].f =
+      _mm256_add_ps(lines[0].a[1].f, _mm256_mul_ps(part01, deltaV));
+  lines[1].a[0].f =
+      _mm256_add_ps(lines[1].a[0].f, _mm256_mul_ps(part10, deltaV));
+  lines[1].a[1].f =
+      _mm256_add_ps(lines[1].a[1].f, _mm256_mul_ps(part11, deltaV));
+}
+
+// Compute W component for 4 packed quaternions
 // sqrt(1 - q.xyz . q.xyz)
 void ComputeQuatReal(CacheLine &line) {
-  __m256 ldp = _mm256_dp_ps(line.a[0].f, line.a[0].f, 0b111'0101);
-  __m256 hdp = _mm256_dp_ps(line.a[1].f, line.a[1].f, 0b111'1010);
+#ifdef QUAT_LAYOUT_REAL_FRONT
+  const int DP_MASK0 = 0b1110'0101;
+  const int DP_MASK1 = 0b1110'1010;
+  static const __m256i PM_MASK0 = _mm256_set_epi32(0, 0, 0, 6, 0, 0, 0, 0);
+  static const __m256i PM_MASK1 = _mm256_set_epi32(0, 0, 0, 7, 0, 0, 0, 1);
+  const int BD_MASK = 0x11;
+#else
+  const int DP_MASK0 = 0b111'0101;
+  const int DP_MASK1 = 0b111'1010;
+  static const __m256i PM_MASK0 = _mm256_set_epi32(6, 0, 0, 0, 0, 0, 0, 0);
+  static const __m256i PM_MASK1 = _mm256_set_epi32(7, 0, 0, 0, 1, 0, 0, 0);
+  const int BD_MASK = 0x88;
+#endif
+  __m256 ldp = _mm256_dp_ps(line.a[0].f, line.a[0].f, DP_MASK0);
+  __m256 hdp = _mm256_dp_ps(line.a[1].f, line.a[1].f, DP_MASK1);
   __m256 mdp = _mm256_or_ps(ldp, hdp);
 
   __m256 linelSub = _mm256_sub_ps(_mm256_set1_ps(1), mdp);
   __m256 result = _mm256_sqrt_ps(linelSub);
-  __m256 sdpl = _mm256_permutevar8x32_ps(
-      result, _mm256_set_epi32(6, 0, 0, 0, 0, 0, 0, 0));
-  __m256 sdph = _mm256_permutevar8x32_ps(
-      result, _mm256_set_epi32(7, 0, 0, 0, 1, 0, 0, 0));
-  line.a[0].f = _mm256_blend_ps(line.a[0].f, sdpl, 0x88);
-  line.a[1].f = _mm256_blend_ps(line.a[1].f, sdph, 0x88);
+  __m256 sdpl = _mm256_permutevar8x32_ps(result, PM_MASK0);
+  __m256 sdph = _mm256_permutevar8x32_ps(result, PM_MASK1);
+  line.a[0].f = _mm256_blend_ps(line.a[0].f, sdpl, BD_MASK);
+  line.a[1].f = _mm256_blend_ps(line.a[1].f, sdph, BD_MASK);
 }
 
 __m128 QuatMult(__m256 parent, __m256 quat) {
@@ -325,13 +409,33 @@ void ConvertCacheline4x4(CacheLine line, CacheLine shiftI, CacheLine scaleF) {
   }
 }
 
-// Compute W component (4th) for 4 packed quaternions
+// Compute W component for 4 packed quaternions
 // sqrt(1 - q.xyz . q.xyz)
 void ComputeQuatReal(CacheLine &line) {
-  __m128 dp0 = _mm_dp_ps(line.s[0].f, line.s[0].f, 0b111'0001);
-  __m128 dp1 = _mm_dp_ps(line.s[1].f, line.s[1].f, 0b111'0010);
-  __m128 dp2 = _mm_dp_ps(line.s[2].f, line.s[2].f, 0b111'0100);
-  __m128 dp3 = _mm_dp_ps(line.s[3].f, line.s[3].f, 0b111'1000);
+#ifdef QUAT_LAYOUT_REAL_FRONT
+  const int DP_MASK0 = 0b1110'0001;
+  const int DP_MASK1 = 0b1110'0010;
+  const int DP_MASK2 = 0b1110'0100;
+  const int DP_MASK3 = 0b1110'1000;
+  const int IT_MASK0 = 0b0000'0000;
+  const int IT_MASK1 = 0b0100'0000;
+  const int IT_MASK2 = 0b1000'0000;
+  const int IT_MASK3 = 0b1100'0000;
+#else
+  const int DP_MASK0 = 0b111'0001;
+  const int DP_MASK1 = 0b111'0010;
+  const int DP_MASK2 = 0b111'0100;
+  const int DP_MASK3 = 0b111'1000;
+  const int IT_MASK0 = 0b0011'0000;
+  const int IT_MASK1 = 0b0111'0000;
+  const int IT_MASK2 = 0b1011'0000;
+  const int IT_MASK3 = 0b1111'0000;
+#endif
+
+  __m128 dp0 = _mm_dp_ps(line.s[0].f, line.s[0].f, DP_MASK0);
+  __m128 dp1 = _mm_dp_ps(line.s[1].f, line.s[1].f, DP_MASK1);
+  __m128 dp2 = _mm_dp_ps(line.s[2].f, line.s[2].f, DP_MASK2);
+  __m128 dp3 = _mm_dp_ps(line.s[3].f, line.s[3].f, DP_MASK3);
 
   __m128 line0 = _mm_or_ps(dp0, dp1);
   __m128 line1 = _mm_or_ps(dp2, dp3);
@@ -340,10 +444,10 @@ void ComputeQuatReal(CacheLine &line) {
   __m128 linelSub = _mm_sub_ps(_mm_set1_ps(1), lineL);
   __m128 result = _mm_sqrt_ps(linelSub);
 
-  line.s[0].f = _mm_insert_ps(line.s[0].f, result, 0b0011'0000);
-  line.s[1].f = _mm_insert_ps(line.s[1].f, result, 0b0111'0000);
-  line.s[2].f = _mm_insert_ps(line.s[2].f, result, 0b1011'0000);
-  line.s[3].f = _mm_insert_ps(line.s[3].f, result, 0b1111'0000);
+  line.s[0].f = _mm_insert_ps(line.s[0].f, result, IT_MASK0);
+  line.s[1].f = _mm_insert_ps(line.s[1].f, result, IT_MASK1);
+  line.s[2].f = _mm_insert_ps(line.s[2].f, result, IT_MASK2);
+  line.s[3].f = _mm_insert_ps(line.s[3].f, result, IT_MASK3);
 }
 
 __m128 QuatMult(__m128 parent, __m128 quat) {
@@ -390,9 +494,40 @@ struct BReg16 {
   uint16_t values[8];
 };
 
+struct BReg8 {
+  uint8_t values[16];
+};
+
+struct BReg32x2 {
+  uint32_t values[8];
+};
+
+struct BReg64 {
+  uint64_t values[2];
+};
+
+struct BReg64x2 {
+  uint64_t values[4];
+};
+
+struct BReg16x2 {
+  uint16_t values[16];
+};
+
+struct BRegFloat {
+  float values[4];
+};
+
+struct BRegFloatx2 {
+  float values[8];
+};
+
 union TsReg {
+  BReg64 u64;
+  BRegFloat f;
   BReg32 u32;
   BReg16 u16;
+  BReg8 u8;
   SReg xmm;
 
   TsReg() = default;
@@ -402,6 +537,9 @@ union TsReg {
 
 union AsReg {
   TsReg d[2];
+  BRegFloatx2 f;
+  BReg32x2 u32;
+  BReg16x2 u16;
   AReg ymm;
 };
 
@@ -692,6 +830,7 @@ void Bench4x32b() {
         std::chrono::duration_cast<std::chrono::nanoseconds>(dur).count();
     micros += cnt;
     Observe(h, cnt);
+    [[maybe_unused]] volatile CacheLine linev = line;
   }
 
   Print(h, "4x32b");
@@ -717,6 +856,7 @@ void Bench16x16b() {
         std::chrono::duration_cast<std::chrono::nanoseconds>(dur).count();
     micros += cnt;
     Observe(h, cnt);
+    [[maybe_unused]] volatile CacheLine linev = line;
   }
 
   Print(h, "16x16b");
@@ -751,6 +891,7 @@ void Bench2AReg8x4() {
         std::chrono::duration_cast<std::chrono::nanoseconds>(dur).count();
     micros += cnt;
     Observe(h, cnt);
+    [[maybe_unused]] volatile CacheLine linev = rg;
   }
 
   Print(h, "2AReg8x4");
@@ -759,18 +900,18 @@ void Bench2AReg8x4() {
 
 void BenchQuatMult() {
   AsReg rg;
-  rg.d[0].u16 = {1, 2, 3, 4, 5, 6, 7, 8};
-  rg.d[0].u16 = {9, 10, 11, 12, 13, 14, 15, 16};
+  rg.u16 = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
 
   size_t micros = 0;
   HistogramU h{};
 
   for (size_t i = 0; i < 20'000'000; i++) {
     auto startTime = std::chrono::high_resolution_clock::now();
+    [[maybe_unused]] volatile auto item =
 #ifdef __AVX2__
-    QuatMult(rg.ymm.f, rg.ymm.f);
+        QuatMult(rg.ymm.f, rg.ymm.f);
 #else
-    QuatMult(rg.d->xmm.f, rg.d->xmm.f);
+        QuatMult(rg.d->xmm.f, rg.d->xmm.f);
 #endif
     auto dur = std::chrono::high_resolution_clock::now() - startTime;
     const size_t cnt =
@@ -785,12 +926,10 @@ void BenchQuatMult() {
 
 void BenchDualMult() {
   AsReg rg;
-  rg.d[0].u16 = {1, 2, 3, 4, 5, 6, 7, 8};
-  rg.d[0].u16 = {9, 10, 11, 12, 13, 14, 15, 16};
+  rg.u16 = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
 
   AsReg rg0;
-  rg0.d[0].u16 = {1, 2, 3, 4, 5, 6, 7, 8};
-  rg0.d[0].u16 = {9, 10, 11, 12, 13, 14, 15, 16};
+  rg0.u16 = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
 
   AsReg rgn[255];
 
@@ -818,6 +957,7 @@ void BenchDualMult() {
   printf("[DualMult] Average duration: %zu ns\n", micros / 20'000'000);
 }
 
+#define GLM_FORCE_QUAT_DATA_XYZW
 #include "glm/gtx/dual_quaternion.hpp"
 
 static int myrand() {
@@ -985,27 +1125,678 @@ void BenchComputeQuatReal() {
         std::chrono::duration_cast<std::chrono::nanoseconds>(dur).count();
     micros += cnt;
     Observe(h, cnt);
+    [[maybe_unused]] volatile CacheLine linev = reg.line;
   }
 
   Print(h, "ComputeQuatReal");
   printf("[ComputeQuatReal] Average duration: %zu ns\n", micros / 20'000'000);
 }
 
+union BlockDelta8 {
+  struct {
+    uint16_t blockId;
+    uint16_t alpha;
+  } r[8];
+  __m256 ymm;
+};
+
+BlockDelta8 BlockDelta8x8(uint32_t frameBlock[8], uint8_t blockOffsets[8],
+                          uint32_t localFrame) {
+  BlockDelta8 retval{};
+
+  for (int i = 0; i < 8; i++) {
+    uint32_t frames = frameBlock[i];
+    retval.r[i].blockId = blockOffsets[i];
+
+    for (uint32_t j = 0; j < localFrame; j++) {
+      retval.r[i].blockId += frames & (1 << j);
+    }
+
+    for (int j = localFrame - 1; j > 0; j--) {
+      if (frames & (1 << j)) {
+        retval.r[i].alpha = j;
+        break;
+      }
+    }
+  }
+
+  return retval;
+}
+
+#ifdef __AVX__
+
+__m256i Log2(__m256i input) {
+  input = _mm256_or_si256(input, _mm256_srli_epi32(input, 1));
+  input = _mm256_or_si256(input, _mm256_srli_epi32(input, 2));
+  input = _mm256_or_si256(input, _mm256_srli_epi32(input, 4));
+  input = _mm256_or_si256(input, _mm256_srli_epi32(input, 8));
+  input = _mm256_or_si256(input, _mm256_srli_epi32(input, 16));
+  input = _mm256_mullo_epi32(input, _mm256_set1_epi32(0x07C4ACDDU));
+  input = _mm256_srli_epi32(input, 27);
+
+  static const int multiplyDeBruijnBitPosition[32] = {
+      0, 9,  1,  10, 13, 21, 2,  29, 11, 14, 16, 18, 22, 25, 3, 30,
+      8, 12, 20, 28, 15, 17, 24, 7,  19, 27, 23, 6,  26, 5,  4, 31};
+
+  return _mm256_i32gather_epi32(multiplyDeBruijnBitPosition, input, 4);
+}
+
+void TestLog2() {
+  AsReg reg;
+  reg.u32 = {1029870208, 1114013593, 3708233265, 776968483,
+             1653167050, 4059207886, 3779785463, 3330665569};
+
+  AsReg ret;
+  ret.ymm.i = Log2(reg.ymm.i);
+
+  for (int i = 0; i < 8; i++) {
+    uint32_t bit = 0;
+    uint32_t item = reg.u32.values[i];
+
+    while (item >>= 1) {
+      bit++;
+    }
+
+    assert(bit == ret.u32.values[i]);
+  }
+}
+
+__m256i NumBits(__m256i input) {
+  // v = v - ((v >> 1) & 0x55555555);
+  input =
+      _mm256_sub_epi32(input, _mm256_and_si256(_mm256_srli_epi32(input, 1),
+                                               _mm256_set1_epi32(0x55555555)));
+  // u = (v >> 2) & 0x33333333;
+  __m256i u = _mm256_and_si256(_mm256_srli_epi32(input, 2),
+                               _mm256_set1_epi32(0x33333333));
+  // v = (v & 0x33333333) + u;
+  input = _mm256_add_epi32(
+      _mm256_and_si256(input, _mm256_set1_epi32(0x33333333)), u);
+  // u = v + (v >> 4) & 0xF0F0F0F;
+  u = _mm256_and_si256(_mm256_add_epi32(input, _mm256_srli_epi32(input, 4)),
+                       _mm256_set1_epi32(0xF0F0F0F));
+
+  // v = (u * 0x1010101) >> 24;
+  return _mm256_srli_epi32(_mm256_mullo_epi32(u, _mm256_set1_epi32(0x1010101)),
+                           24);
+}
+
+void TestNumBits() {
+  AsReg reg;
+  reg.u32 = {1029870208, 1114013593, 3708233265, 776968483,
+             1653167050, 4059207886, 3779785463, 3330665569};
+
+  AsReg ret;
+  ret.ymm.i = NumBits(reg.ymm.i);
+
+  for (int i = 0; i < 8; i++) {
+    uint32_t bits = 0;
+    uint32_t item = reg.u32.values[i];
+
+    do {
+      bits += item & 1;
+    } while (item >>= 1);
+
+    assert(bits == ret.u32.values[i]);
+  }
+}
+
+__m256i NumLeadingZeroes(__m256i input) {
+  input =
+      _mm256_and_si256(input, _mm256_sub_epi32(_mm256_set1_epi32(0), input));
+  input = _mm256_srli_epi32(
+      _mm256_mullo_epi32(input, _mm256_set1_epi32(0x077CB531U)), 27);
+
+  static const int multiplyDeBruijnBitPosition[32] = {
+      0,  1,  28, 2,  29, 14, 24, 3, 30, 22, 20, 15, 25, 17, 4,  8,
+      31, 27, 13, 23, 21, 19, 16, 7, 26, 12, 18, 6,  11, 5,  10, 9};
+  return _mm256_i32gather_epi32(multiplyDeBruijnBitPosition, input, 4);
+}
+
+void TestNumLeadingZeroes() {
+  AsReg reg;
+  reg.u32 = {0xff, 0xfc, 0x80, 0x7000, 0xf1500000, 0x5800a000, 0xff000100, 0};
+
+  AsReg ret;
+  ret.ymm.i = NumLeadingZeroes(reg.ymm.i);
+
+  for (int i = 0; i < 8; i++) {
+    uint32_t bits = 0;
+    uint32_t item = reg.u32.values[i];
+
+    while (item && (item & 1) == 0) {
+      bits++;
+      item >>= 1;
+    };
+
+    assert(bits == ret.u32.values[i]);
+  }
+}
+
+__m256i Triggers8x32(__m256i frameBlock, uint32_t prevFrame,
+                     uint32_t deltaFrames) {
+  const uint32_t lsh = 32 - prevFrame - deltaFrames;
+  __m256i highCut = _mm256_slli_epi32(frameBlock, lsh);
+  __m256i lowCut = _mm256_srli_epi32(highCut, lsh + prevFrame);
+  return NumBits(lowCut);
+}
+
+__m128i Triggers4x64(__m256i frameBlock, uint32_t prevFrame,
+                     uint32_t deltaFrames) {
+  const uint32_t lsh = 64 - prevFrame - deltaFrames;
+  __m256i highCut = _mm256_slli_epi64(frameBlock, lsh);
+  __m256i lowCut = _mm256_srli_epi64(highCut, lsh + prevFrame);
+  __m256i numBitsQuads = NumBits(lowCut);
+  __m256i numBits = _mm256_hadd_epi32(numBits, numBits);
+  static const __m256i PM_MASK = _mm256_set_epi32(0, 0, 0, 0, 5, 4, 1, 0);
+
+  return _mm256_castsi256_si128(_mm256_permutevar8x32_epi32(numBits, PM_MASK));
+}
+
+CacheLine BlockDelta8x32(__m256i frameBlock, __m256i blockOffsets,
+                         uint32_t localFrame, float localDelta) {
+  __m256i lowerPart = _mm256_slli_epi32(frameBlock, 32 - localFrame);
+  __m256i numFrames = NumBits(lowerPart);
+  __m256i upperPart = _mm256_srli_epi32(frameBlock, localFrame);
+  __m256i nextFrame = NumLeadingZeroes(upperPart);
+  const __m256i localFrameV = _mm256_set1_epi32(localFrame + 1);
+  const __m256i localFrameV0 = _mm256_set1_epi32(localFrame);
+  nextFrame = _mm256_add_epi32(nextFrame, localFrameV);
+  __m256i lowBound = Log2(_mm256_srli_epi32(lowerPart, 31 - localFrame));
+  CacheLine retVal;
+  retVal.a[0].i = _mm256_add_epi32(numFrames, blockOffsets);
+
+  __m256 blockSizeRcp =
+      _mm256_rcp_ps(_mm256_cvtepi32_ps(_mm256_sub_epi32(nextFrame, lowBound)));
+  __m256 delta = _mm256_mul_ps(
+      _mm256_cvtepi32_ps(_mm256_sub_epi32(localFrameV0, lowBound)),
+      blockSizeRcp);
+  __m256 globalDelta = _mm256_mul_ps(_mm256_set1_ps(localDelta), blockSizeRcp);
+  retVal.a[1].f = _mm256_add_ps(delta, globalDelta);
+
+  return retVal;
+}
+
+CacheLine BlockDelta8x8(__m256i frameBlock, uint64_t blockOffsets,
+                        uint32_t localFrame, float localDelta) {
+  return BlockDelta8x32(frameBlock,
+                        _mm256_cvtepu8_epi32(_mm_set_epi64x(0, blockOffsets)),
+                        localFrame, localDelta);
+}
+
+CacheLine BlockDelta8x16(__m256i frameBlock, __m128i blockOffsets,
+                         uint32_t localFrame, float localDelta) {
+  return BlockDelta8x32(frameBlock, _mm256_cvtepu16_epi32(blockOffsets),
+                        localFrame, localDelta);
+}
+
+uint32_t NumBits(uint32_t item) {
+  uint32_t retVal = 0;
+  do {
+    retVal += item & 1;
+  } while (item >>= 1);
+
+  return retVal;
+}
+
+uint32_t NumZeroes(uint32_t item) {
+  uint32_t retVal = 0;
+  while (item && (item & 1) == 0) {
+    retVal++;
+    item >>= 1;
+  }
+
+  return retVal;
+}
+
+struct Frame {
+  uint16_t begin;
+  uint8_t delta;
+  uint8_t blockSize;
+};
+
+Frame SingleBlock(uint32_t frameBlock, uint32_t offset, uint32_t localFrame) {
+  uint32_t lowerPart = uint64_t(frameBlock) << (32 - localFrame);
+  uint32_t numFrames = NumBits(lowerPart);
+  uint32_t upperPart = uint64_t(frameBlock) >> (localFrame);
+  uint32_t nextFrame = NumZeroes(upperPart) + localFrame + 1;
+  uint32_t lInput = uint64_t(lowerPart) >> (31 - localFrame);
+  uint32_t lowBound = log2(lInput);
+  uint16_t blockOffset = numFrames + offset;
+  uint8_t delta = localFrame - lowBound;
+  uint8_t blockSize = nextFrame - lowBound;
+
+  return {blockOffset, delta, blockSize};
+}
+
+#include <algorithm>
+#include <span>
+
+void TestBlockDelta8x8() {
+  AsReg reg;
+  reg.u32 = {
+      0b1011'1101'0110'0010'1001'0010'1000'0000,
+      0b1100'0010'0110'0110'0111'1111'1001'1001,
+      0b1101'1101'0000'0111'0010'0110'0011'0001,
+      0b1010'1110'0100'1111'1001'1001'0010'0011,
+      0b1110'0010'1000'1001'0101'0011'1100'1010,
+      0b1111'0001'1111'0010'1001'1000'1100'1110,
+      0b1110'0001'0100'1010'1111'0010'1111'0111,
+      0b1000'0000'0000'0000'0000'0000'0000'0000,
+  };
+
+  TsReg offsets;
+  offsets.u8 = {7, 6, 2, 4, 5, 6, 7, 8};
+
+  /*int b = 1;
+
+  uint8_t expectedBlockSizes[]{8, 2, 3, 3, 2, 4, 1, 2, 2, 1, 1, 1, 2};
+
+  for (int f = 0; f < 32; f++) {
+    auto n = SingleBlock(reg.u32.values[b], offsets.u8.values[b], f);
+  }*/
+
+  uint8_t frames0[]{7, 15, 17, 20, 23, 25, 29, 30, 32, 34, 35, 36, 37, 39};
+  uint8_t frames1[]{6,  7,  10, 11, 14, 15, 16, 17, 18, 19,
+                    20, 21, 24, 25, 28, 29, 32, 37, 38};
+  uint8_t frames2[]{2, 3, 7, 8, 12, 13, 16, 19, 20, 21, 27, 29, 30, 31, 33, 34};
+  uint8_t frames3[]{4,  5,  6,  10, 13, 16, 17, 20, 21,
+                    22, 23, 24, 27, 30, 31, 32, 34, 36};
+  uint8_t frames4[]{5,  7,  9,  12, 13, 14, 15, 18,
+                    20, 22, 25, 29, 31, 35, 36, 37};
+  uint8_t frames5[]{6,  8,  9,  10, 13, 14, 18, 19, 22, 24,
+                    27, 28, 29, 30, 31, 35, 36, 37, 38};
+  uint8_t frames6[]{7,  8,  9,  10, 12, 13, 14, 15, 17, 20,
+                    21, 22, 23, 25, 27, 30, 32, 37, 38, 39};
+  uint8_t frames7[]{8, 40};
+
+  std::span<uint8_t> frames[]{frames0, frames1, frames2, frames3,
+                              frames4, frames5, frames6, frames7};
+
+  /*uint64_t f = 0;
+
+  for (auto i : frames7) {
+    f |= 1ULL << (i - 8);
+  }
+
+  f >>= 1;*/
+
+  const float delta = 1 / 120.f;
+  const float frameRate = 30;
+  const float frameRateRcp = 1 / 30.f;
+  const float timeEnd = 32 * frameRateRcp;
+
+  for (float t = 0; t <= timeEnd; t += delta) {
+    /*const float frameDelta = t * frameRate;
+    const uint8_t frame = frameDelta;
+    uint8_t *lowFrame =
+        std::upper_bound(std::begin(frames0), std::end(frames0), frame) - 1;
+    const float localFrame = frameDelta - *lowFrame;
+    const float frameSize = lowFrame[1] - lowFrame[0];
+    const float lerpDelta = localFrame / frameSize;*/
+
+    const float frameDeltaLocal = t * frameRate;
+    const uint8_t frameLocal = frameDeltaLocal;
+    const float deltaLocal = frameDeltaLocal - frameLocal;
+
+    CacheLine line =
+        BlockDelta8x8(reg.ymm.i, offsets.u64.values[0], frameLocal, deltaLocal);
+
+    AsReg rBlocks;
+    rBlocks.ymm = line.a[0];
+    AsReg deltas;
+    deltas.ymm = line.a[1];
+
+    for (int b = 0; b < 8; b++) {
+      std::span<uint8_t> bSpan = frames[b];
+      const float frameDelta = (t * frameRate) + bSpan.front();
+
+      const uint16_t block = rBlocks.u32.values[b] - offsets.u8.values[b];
+      const float totalDelta = deltas.f.values[b];
+
+      const float sampledValue =
+          (bSpan[block + 1] - bSpan[block]) * totalDelta + bSpan[block];
+
+      const float diff = abs(sampledValue - frameDelta);
+      assert(diff < 0.01);
+
+      printf("%u %f %f %f\n", block, frameDelta, sampledValue, totalDelta);
+    }
+  }
+}
+
+#endif
+
+void BenchBlockDelta8x8_() {
+  uint32_t frames[8]{1, 2, 3, 4, 5, 6, 7, 8};
+  uint8_t offsets[8]{0, 1, 2, 3, 4, 5, 6, 7};
+
+  size_t micros = 0;
+  HistogramU h{};
+
+  for (size_t i = 0; i < 20'000'000; i++) {
+    auto startTime = std::chrono::high_resolution_clock::now();
+    [[maybe_unused]] volatile auto item = BlockDelta8x8(frames, offsets, 28);
+    auto dur = std::chrono::high_resolution_clock::now() - startTime;
+    const size_t cnt =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(dur).count();
+    micros += cnt;
+    Observe(h, cnt);
+  }
+
+  Print(h, "BlockDelta8x8");
+  printf("[BlockDelta8x8] Average duration: %zu ns\n", micros / 20'000'000);
+}
+
+void BenchBlockDelta8x8() {
+  AsReg frames;
+  frames.d[0].u32 = {1, 2, 3, 4};
+  frames.d[1].u32 = {5, 6, 7, 8};
+  TsReg offsets;
+  offsets.u16 = {0, 1, 2, 3, 4, 5, 6, 7};
+  size_t micros = 0;
+  HistogramU h{};
+
+  for (size_t i = 0; i < 20'000'000; i++) {
+    auto startTime = std::chrono::high_resolution_clock::now();
+    [[maybe_unused]] volatile auto item =
+#ifdef __AVX__
+        BlockDelta8x8(frames.ymm.i, offsets.u64.values[0], 28, 0.5);
+#else
+        BlockDelta8x8(frames.d[0].xmm.i, offsets.u64.values[0], 28, 0.5);
+#endif
+    auto dur = std::chrono::high_resolution_clock::now() - startTime;
+    const size_t cnt =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(dur).count();
+    micros += cnt;
+    Observe(h, cnt);
+  }
+
+  Print(h, "BlockDelta8x8");
+  printf("[BlockDelta8x8] Average duration: %zu ns\n", micros / 20'000'000);
+}
+
+void Decompose(int type, const void *blockData, uint32_t blockIndex,
+               uint32_t numBlocks, float delta, const CacheLine *masks,
+               const CacheLine *scales, const CacheLine *offsets,
+               float *poseTable, uint32_t *ptIndices) {
+  CacheLine line[4];
+
+  switch (type) {
+  case 0: {
+    const __m128i *firstBlock =
+        static_cast<const __m128i *>(blockData) + blockIndex * 2;
+    const __m128i *nextBlock = firstBlock + (blockIndex % numBlocks) * 2;
+
+    Decompose16x16b(firstBlock, line[0]);
+    Decompose16x16b(nextBlock, line[1]);
+
+    line[0].a[0].f = _mm256_cvtepi32_ps(line[0].a[0].i);
+    line[0].a[1].f = _mm256_cvtepi32_ps(line[0].a[1].i);
+    line[1].a[0].f = _mm256_cvtepi32_ps(line[1].a[0].i);
+    line[1].a[1].f = _mm256_cvtepi32_ps(line[1].a[1].i);
+
+    LerpCacheLines(line, delta);
+
+    ConvertCacheline4x4(line[0], *scales, *offsets);
+    CacheLineToPoseTable(line[0], poseTable, ptIndices);
+
+    break;
+  }
+  case 3: {
+    const __m128i *firstBlock =
+        static_cast<const __m128i *>(blockData) + blockIndex;
+
+    Decompose16x16b(firstBlock, line[0]);
+
+    line[0].a[0].f = _mm256_cvtepi32_ps(line[0].a[0].i);
+    line[0].a[1].f = _mm256_cvtepi32_ps(line[0].a[1].i);
+
+    LerpCacheLine(line[0], delta);
+
+    ConvertCacheline4x4(line[0], *scales, *offsets);
+    LowCacheLineToPoseTable(line[0], poseTable, ptIndices);
+
+    break;
+  }
+  case 1: {
+    const __m128i *firstBlock =
+        static_cast<const __m128i *>(blockData) + blockIndex;
+    const __m128i *nextBlock = firstBlock + (blockIndex % numBlocks);
+
+    Decompose4x32b(*firstBlock, line[0]);
+    Decompose4x32b(*nextBlock, line[1]);
+
+    ConvertCacheline4x4(line[0], *masks, *scales, *offsets);
+    ConvertCacheline4x4(line[1], *masks, *scales, *offsets);
+
+    LerpCacheLines(line, delta);
+    CacheLineToPoseTable(line[0], poseTable, ptIndices);
+
+    break;
+  }
+  case 4: {
+    const uint64_t *firstBlock =
+        static_cast<const uint64_t *>(blockData) + blockIndex;
+
+    __m128i loadedBlock =
+        _mm_loadu_si128(reinterpret_cast<const __m128i *>(firstBlock));
+
+    Decompose4x32b(loadedBlock, line[0]);
+
+    ConvertCacheline4x4(line[0], *masks, *scales, *offsets);
+
+    LerpCacheLine(line[0], delta);
+    LowCacheLineToPoseTable(line[0], poseTable, ptIndices);
+
+    break;
+  }
+  case 2: {
+    const CacheLine *firstBlock =
+        static_cast<const CacheLine *>(blockData) + blockIndex;
+    const CacheLine *nextBlock = firstBlock + (blockIndex % numBlocks);
+    Decompose4x16bLow(*firstBlock, line);
+    Decompose4x16bLow(*nextBlock, line + 2);
+
+    ConvertCacheline4x4(line[0], masks[0], scales[0], offsets[0]);
+    ConvertCacheline4x4(line[1], masks[0], scales[0], offsets[0]);
+    ConvertCacheline4x4(line[2], masks[0], scales[0], offsets[0]);
+    ConvertCacheline4x4(line[3], masks[0], scales[0], offsets[0]);
+
+    LerpCacheLines2(line, delta);
+    CacheLineToPoseTable(line[0], poseTable, ptIndices);
+    CacheLineToPoseTable(line[1], poseTable, ptIndices + 16);
+
+    Decompose4x16bMid(*firstBlock, line);
+    Decompose4x16bMid(*nextBlock, line + 2);
+
+    ConvertCacheline4x4(line[0], masks[1], scales[1], offsets[1]);
+    ConvertCacheline4x4(line[1], masks[1], scales[1], offsets[1]);
+    ConvertCacheline4x4(line[2], masks[1], scales[1], offsets[1]);
+    ConvertCacheline4x4(line[3], masks[1], scales[1], offsets[1]);
+
+    LerpCacheLines2(line, delta);
+    CacheLineToPoseTable(line[0], poseTable, ptIndices + 32);
+    CacheLineToPoseTable(line[1], poseTable, ptIndices + 48);
+
+    Decompose4x16bHigh(*firstBlock, line);
+    Decompose4x16bHigh(*nextBlock, line + 2);
+
+    ConvertCacheline4x4(line[0], masks[2], scales[2], offsets[2]);
+    ConvertCacheline4x4(line[1], masks[2], scales[2], offsets[2]);
+    ConvertCacheline4x4(line[2], masks[2], scales[2], offsets[2]);
+    ConvertCacheline4x4(line[3], masks[2], scales[2], offsets[2]);
+
+    LerpCacheLines2(line, delta);
+    CacheLineToPoseTable(line[0], poseTable, ptIndices + 64);
+    CacheLineToPoseTable(line[1], poseTable, ptIndices + 80);
+    break;
+  }
+  case 5: {
+    const __m128i *firstBlock =
+        static_cast<const __m128i *>(blockData) + blockIndex * 2;
+    const __m128i *nextBlock = firstBlock + (blockIndex % numBlocks) * 2;
+    Decompose2x16bLow(firstBlock, line);
+    Decompose2x16bLow(nextBlock, line + 2);
+
+    ConvertCacheline4x4(line[0], masks[0], scales[0], offsets[0]);
+    ConvertCacheline4x4(line[1], masks[0], scales[0], offsets[0]);
+    ConvertCacheline4x4(line[2], masks[0], scales[0], offsets[0]);
+    ConvertCacheline4x4(line[3], masks[0], scales[0], offsets[0]);
+
+    LerpCacheLines2(line, delta);
+    CacheLineToPoseTable(line[0], poseTable, ptIndices);
+    CacheLineToPoseTable(line[1], poseTable, ptIndices + 16);
+
+    Decompose2x16bHigh(firstBlock + 1, line);
+    Decompose2x16bHigh(nextBlock + 1, line + 2);
+
+    ConvertCacheline4x4(line[0], masks[0], scales[0], offsets[0]);
+    ConvertCacheline4x4(line[1], masks[0], scales[0], offsets[0]);
+    ConvertCacheline4x4(line[2], masks[0], scales[0], offsets[0]);
+    ConvertCacheline4x4(line[3], masks[0], scales[0], offsets[0]);
+
+    LerpCacheLines2(line, delta);
+    CacheLineToPoseTable(line[0], poseTable, ptIndices + 32);
+    CacheLineToPoseTable(line[1], poseTable, ptIndices + 48);
+    break;
+  }
+  case 6: {
+    const __m128i *firstBlock =
+        static_cast<const __m128i *>(blockData) + blockIndex * 2;
+    Decompose2x16bLow(firstBlock, line);
+
+    ConvertCacheline4x4(line[0], masks[0], scales[0], offsets[0]);
+    ConvertCacheline4x4(line[1], masks[0], scales[0], offsets[0]);
+
+    LerpCacheLines(line, delta);
+    CacheLineToPoseTable(line[0], poseTable, ptIndices);
+
+    Decompose2x16bHigh(firstBlock + 1, line);
+
+    ConvertCacheline4x4(line[0], masks[1], scales[1], offsets[1]);
+    ConvertCacheline4x4(line[1], masks[1], scales[1], offsets[1]);
+
+    LerpCacheLines(line, delta);
+    CacheLineToPoseTable(line[0], poseTable, ptIndices + 16);
+    break;
+  }
+  }
+}
+
+struct NodeMap {
+  mutable uint32_t id;
+  uint32_t poseTableElementIndex;
+};
+
+template <class C> struct Pointer {
+  int32_t ptr;
+
+  const C *data() const { return nullptr; }
+};
+
+template <class C> struct Array {
+  uint32_t numItems;
+  Pointer<C> data;
+
+  const C *begin() const { return data.data(); }
+  const C *end() const { return begin() + numItems; }
+};
+
+struct CurveSet {
+  uint32_t type;
+  Pointer<CacheLine> offsets;
+  Pointer<CacheLine> scales;
+  Pointer<CacheLine> masks;
+  Pointer<void> data;
+  Array<uint32_t> poseTableIndices;
+};
+
+struct FrameSet {
+  uint32_t type;
+  Pointer<void> data;
+};
+
+struct CurveBatch {
+  Array<NodeMap> userChannels;
+  Array<NodeMap> rigNodeTransforms;
+  Array<NodeMap> rigNodeScales;
+  Array<CurveSet> sets;
+  Array<FrameSet> frameSets;
+  Array<FrameSet> triggers;
+};
+
+struct SkeletonNode {
+  uint32_t id;
+  uint16_t index;
+  uint16_t numChildren;
+};
+
+struct Skeleton {
+  Array<SkeletonNode> rigNodes;
+  Array<float> rigNodeTransforms;
+  Array<SkeletonNode> rigScaleNodes;
+  Array<float> rigNodeScales;
+};
+
+#include <map>
+#include <vector>
+
+struct SimpleSkeletonBind {
+  
+};
+
+struct CurveBatchToSkeletonBinding {
+  float *globalPose;
+  float *userChannels;
+  uint8_t *triggerTable;
+};
+
+struct AnimationMachine {
+  Skeleton *skeleton;
+  void *machineBuffer;
+  // float *userChannels;
+  uint8_t *triggerTable;
+  std::vector<float *> binds;
+  std::vector<CurveBatch *> batches;
+  std::map<uint32_t, uint32_t> userChannels;
+};
+
+void *CreateMachineBuffer(AnimationMachine &item) {
+  const uint32_t numBoneTms = item.skeleton->rigNodeTransforms.numItems;
+  const uint32_t numBoneScales = item.skeleton->rigNodeScales.numItems;
+
+  for (auto &b : item.batches) {
+    for (auto &u : b->userChannels) {
+      u.id = item.userChannels.try_emplace(u.id, item.userChannels.size())
+                 .first->second;
+    }
+  }
+}
+
 int main() {
-  TestDecompose4x32b();
+  /*TestDecompose4x32b();
   TestDecompose16x16b();
   TestDecompose2AReg8x4();
   SmokeTestQuatMult();
   SmokeTestDualQuatMult();
   SmokeTestComputeQuatReal();
-  TestComputeQuatRealZero();
+  TestComputeQuatRealZero();*/
 
-  BenchQuatMult();        // sse 17, avx 17
-  BenchDualMult();        // sse 691 avx 683
+  TestLog2();
+  TestNumBits();
+  TestNumLeadingZeroes();
+  TestBlockDelta8x8();
+
+  BenchQuatMult(); // sse 17, avx 17
+  // BenchDualMult();        // sse 691 avx 683
   BenchComputeQuatReal(); // sse 17
 
   Bench4x32b();    // sse 17
   Bench16x16b();   // sse 17, avx 17
-  Bench2AReg8x4(); // sse 18, avx 17*
+  Bench2AReg8x4(); // sse 18, avx 17
+
+  BenchBlockDelta8x8();
+
   return 0;
 }

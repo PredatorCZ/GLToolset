@@ -1,14 +1,15 @@
 vec3 GetTSNormal(vec3 texel) {
-#ifdef TS_NORMAL_UNORM
-    vec3 result = -1. + texel * 2.;
-#else
-    vec3 result = texel;
-#endif
+    const bool useUnorm = TS_NORMAL_UNORM;
+    const bool deriveZ = TS_NORMAL_DERIVE_Z;
 
-#ifdef TS_NORMAL_DERIVE_Z
-    float derived = clamp(dot(result.xy, result.xy), 0, 1);
-    return vec3(result.xy, sqrt(1. - derived));
-#else
-    return result;
-#endif
+    if(useUnorm) {
+        texel = texel * 2 - 1;
+    }
+
+    if(deriveZ) {
+        float derived = clamp(dot(texel.xy, texel.xy), 0, 1);
+        return vec3(texel.xy, sqrt(1. - derived));
+    }
+
+    return texel;
 }

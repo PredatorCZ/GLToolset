@@ -57,6 +57,7 @@ build_target(
   TYPE
   OBJECT
   SOURCES
+  src/common/constants.cpp
   src/common/resource.cpp
   src/common/camera.cpp
   src/common/registry.cpp
@@ -94,9 +95,21 @@ add_executable(test_curvebatch_avx src/motion/curvebatch_evaluate.cpp)
 target_compile_options(test_curvebatch_avx PRIVATE -msse4 -mavx2 -mfma -O4)
 target_link_libraries(test_curvebatch_avx spike-interface)
 
-add_executable(test_curvebatch_sse src/motion/curvebatch_evaluate.cpp)
-target_compile_options(test_curvebatch_sse PRIVATE -msse4 -O4)
-target_link_libraries(test_curvebatch_sse spike-interface)
+#add_executable(test_curvebatch_sse src/motion/curvebatch_evaluate.cpp)
+#target_compile_options(test_curvebatch_sse PRIVATE -msse4 -O4)
+#target_link_libraries(test_curvebatch_sse spike-interface)
 enable_testing()
 add_test(NAME test_curvebatch_avx COMMAND test_curvebatch_avx)
-add_test(NAME test_curvebatch_sse COMMAND test_curvebatch_sse)
+#add_test(NAME test_curvebatch_sse COMMAND test_curvebatch_sse)
+
+
+build_target(
+  NAME
+  transpile
+  TYPE
+  APP
+  SOURCES
+  src/cshaders/transpile.cpp
+  LINKS
+  spike
+  simplecpp)

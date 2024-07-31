@@ -38,9 +38,9 @@ static bool CompileShader(prime::graphics::StageObject &s,
     glGetShaderiv(shaderId, GL_COMPILE_STATUS, &success);
 
     if (!success) {
-      /*char infoLog[512]{};
+      char infoLog[512]{};
       glGetShaderInfoLog(shaderId, 512, NULL, infoLog);
-      printerror(infoLog);*/
+      printerror(infoLog);
       GLint sourceLen;
       glGetShaderiv(shaderId, GL_SHADER_SOURCE_LENGTH, &sourceLen);
       std::string source;
@@ -78,6 +78,7 @@ prime::graphics::ProgramIntrospection IntrospectShader(uint32 program) {
     glGetProgramResourceName(program, GL_UNIFORM_BLOCK, ub, sizeof(nameData),
                              NULL, nameData);
     auto ubIndex = glGetUniformBlockIndex(program, nameData);
+    PrintInfo("UBO: ", nameData);
     if (std::string_view(nameData) == "ubCamera") {
       glUniformBlockBinding(program, ubIndex, 0);
       retVal.uniformBlockBinds.emplace(nameDataPtr, 0);
@@ -92,7 +93,7 @@ prime::graphics::ProgramIntrospection IntrospectShader(uint32 program) {
                              nameData);
 
     if (auto location = glGetUniformLocation(program, nameData);
-        location != -1) {
+        PrintInfo("Uniform: ", nameData), location != -1) {
       std::string_view name(nameData);
 
       if (name.starts_with("sm")) {
@@ -120,6 +121,7 @@ prime::graphics::ProgramIntrospection IntrospectShader(uint32 program) {
   for (int ub = 0; ub < numActiveBuffers; ub++) {
     glGetProgramResourceName(program, GL_SHADER_STORAGE_BLOCK, ub,
                              sizeof(nameData), NULL, nameData);
+    PrintInfo("SSBO: ", nameData);
     auto location = glGetUniformBlockIndex(program, nameData);
     retVal.storageBufferLocations.emplace(nameDataPtr, location);
   }
@@ -194,6 +196,18 @@ CreateProgram(Program &pgm, common::ResourceHash referee,
       printerror(infoLog);
     }
   }
+
+  GLint binSize;
+  glGetProgramiv(program, GL_PROGRAM_BINARY_LENGTH, &binSize);
+
+  std::vector<uint8> binProgram;
+  binProgram.resize(binSize);
+  GLsizei binLength;
+  GLenum binFormat;
+  void *pgmptr = binProgram.data();
+
+  glGetProgramBinary(program, binSize, &binLength, &binFormat,
+                     binProgram.data());
 
   pgm.mutate_program(program);
   stagesToProgram.emplace(key, program);

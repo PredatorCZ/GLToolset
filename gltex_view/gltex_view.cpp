@@ -15,6 +15,7 @@
 #include <variant>
 
 #include "common/camera.hpp"
+#include "common/constants.hpp"
 #include "common/resource.hpp"
 #include "graphics/frame_buffer.hpp"
 #include "graphics/post_process.hpp"
@@ -238,6 +239,8 @@ int main(int, char *argv[]) {
     return 2;
   }
 
+  pc::Constants constants = pc::GetConstants();
+
   ImGui::CreateContext();
   ImGuiIO &io = ImGui::GetIO();
   io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
@@ -403,11 +406,12 @@ int main(int, char *argv[]) {
 
   while (!glfwWindowShouldClose(window)) {
     pc::PollUpdates();
-    mainProgram->lightSpans.pointLightTMs[0] = lightOrbit * lightOrbit.w;
+    mainProgram->lightDataSpans.pointLights[0].position =
+        glm::vec3{lightOrbit * lightOrbit.w};
     *boxObj.localPos =
         glm::vec4(glm::vec3{lightOrbit * lightOrbit.w}, lightScale);
     *boxObj.lightColor = mainProgram->lightDataSpans.pointLights[0].color;
-    *mainProgram->lightSpans.viewPos =
+    *mainProgram->lightDataSpans.viewPos =
         glm::vec<3, float, glm::highp>{} * camera.transform;
 
     glBindFramebuffer(GL_FRAMEBUFFER, canvas.bufferId);

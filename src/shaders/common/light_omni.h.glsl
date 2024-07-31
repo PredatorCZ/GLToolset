@@ -5,13 +5,11 @@
 const int maxNumLights = NUM_LIGHTS;
 #endif
 
-#ifdef FRAGMENT
-#define ILIGHTS inLights
-
 struct PointLight {
   vec3 color;
   bool isActive;
   vec3 attenuation;
+  vec3 position;
 };
 
 struct SpotLight {
@@ -19,29 +17,23 @@ struct SpotLight {
   float cutOffBegin;
   vec3 attenuation;
   float cutOffEnd;
+  vec3 position;
+  vec3 direction;
 };
 
 CPPATTR(template <size_t maxNumLights>)
 uniform ubLightData {
+  vec3 viewPos;
   PointLight pointLight[maxNumLights];
   SpotLight spotLight[maxNumLights];
 };
 
+#ifdef FRAGMENT
+#define ILIGHTS inLights
 #endif
 
 #ifdef VERTEX
 #define ILIGHTS outLights
-
-CPPATTR(template <size_t maxNumLights>)
-uniform ubLights {
-  vec3 viewPos;
-#ifndef INSTANCED
-  vec3 lightPos[maxNumLights];
-  vec3 spotLightPos[maxNumLights];
-  vec3 spotLightDir[maxNumLights];
-#endif
-};
-
 #endif
 
 #ifdef SHADER

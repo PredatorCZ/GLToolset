@@ -2,8 +2,6 @@
 // INSTANCED: Instanced draw call
 // VS_NUMBONES x: 1 = no skinning, used as model space transform
 //                >1 = skinning, max indexed transforms, recommended (pow 2, up to 0x40)
-// VS_NUMUVS2: Num used vec2 texcoords
-// VS_NUMUVS4: Num used vec4 texcoords
 
 #include "common.h.glsl"
 #include "dual_quat.glsl"
@@ -12,35 +10,46 @@
 #define VS_NUMBONES 1
 #endif
 
-struct Transform {
-  vec4 indexedModel[2];
-  vec3 indexedInflate;
+struct CFeats {
+  int numBones;
+  int tms[3];
+};
+
+const CFeats c_feats = CFeats(VS_NUMBONES, int[](1, 2, 3));
+
+struct Transforms {
+vec4 indexedModel[c_feats.numBones][2];
+vec3 indexedInflate[c_feats.numBones];
 };
 
 #ifdef INSTANCED
+
 readonly buffer InstanceTransforms {
 #ifdef VS_NUMUVTMS
 vec4 uvTransform[VS_NUMUVTMS];
 #endif
-Transform transforms[];
+Transforms transforms[];
 };
 
 vec3 GetSingleModelTransform(vec4 pos, int index) {
-const int instanceStride = VS_NUMBONES;
-return DQTransformPoint(transforms[gl_InstanceID * instanceStride + index].indexedModel, pos.xyz * transforms[gl_InstanceID * instanceStride + index].indexedInflate);
+  return DQTransformPoint(transforms[gl_InstanceID].indexedModel[index], pos.xyz * transforms[gl_InstanceID].indexedInflate[index]);
 }
+
 #else
 uniform ubInstanceTransforms {
 #ifdef VS_NUMUVTMS
 vec4 uvTransform[VS_NUMUVTMS];
 #endif
-Transform transforms[VS_NUMBONES];
+Transforms transform;
 };
 
 vec3 GetSingleModelTransform(vec4 pos, int index) {
-return DQTransformPoint(transforms[index].indexedModel, pos.xyz * transforms[index].indexedInflate);
+  return DQTransformPoint(transform.transform.indexedModel[index], pos.xyz * transform.transform.indexedInflate[index]);
 }
+
 #endif
+
+
 vec3 GetModelSpace(vec4 modelSpace) {
 vec3 finalSpace;
 #if VS_NUMBONES > 1
@@ -54,13 +63,8 @@ return finalSpace;
 
 layout(location = 0) in vec4 inPos;
 
-#ifdef VS_NUMUVS2
 #include "uvs.vert"
-#endif
-
-#if defined(TS_NORMAL_ATTR) || defined(TS_TANGENT_ATTR)
 #include "ts_normal.vert"
-#endif
 
 #ifdef NUM_LIGHTS
 #include "light_omni.vert"
