@@ -28,6 +28,7 @@ SQClass::SQClass(SQSharedState *ss,SQClass *base)
     }
     _members = base?base->_members->Clone() : SQTable::Create(ss,0);
     __ObjAddRef(_members);
+    _name = nullptr;
 
     INIT_CHAIN();
     ADD_TO_CHAIN(&_sharedstate->_gc_chain, this);

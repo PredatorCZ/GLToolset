@@ -83,6 +83,7 @@ public:
     bool _locked;
     SQInteger _constructoridx;
     SQInteger _udsize;
+    SQString *_name;
 };
 
 #define calcinstancesize(_theclass_) \

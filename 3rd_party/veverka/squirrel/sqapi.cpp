@@ -296,7 +296,27 @@ SQRESULT sq_newclass(HSQUIRRELVM v,SQBool hasbase)
     }
     SQClass *newclass = SQClass::Create(_ss(v), baseclass);
     if(baseclass) v->Pop();
+    SQObjectPtr &name = stack_get(v, -1);
+    if (sq_type(name) == OT_STRING) {
+        newclass->_name = _string(name);
+    }
     v->Push(newclass);
+    return SQ_OK;
+}
+
+SQRESULT sq_getclassname(HSQUIRRELVM v,const SQChar **name) {
+    if (!name) {
+        return SQ_ERROR;
+    }
+
+    SQObjectPtr &base = stack_get(v,-1);
+    if (sq_type(base) != OT_CLASS || _class(base)->_name == nullptr) {
+        *name = "<unnamed>";
+        return SQ_ERROR;
+    }
+
+    *name = _class(base)->_name->_val;
+
     return SQ_OK;
 }
 
