@@ -10,7 +10,7 @@
 #define UINT_MINUS_ONE (0xFFFFFFFF)
 #endif
 
-#define SQ_CLOSURESTREAM_HEAD (('S'<<24)|('Q'<<16)|('I'<<8)|('R'))
+#define SQ_CLOSURESTREAM_HEAD (('N'<<24)|('U'<<16)|('T'<<8)|('S'))
 #define SQ_CLOSURESTREAM_PART (('P'<<24)|('A'<<16)|('R'<<8)|('T'))
 #define SQ_CLOSURESTREAM_TAIL (('T'<<24)|('A'<<16)|('I'<<8)|('L'))
 

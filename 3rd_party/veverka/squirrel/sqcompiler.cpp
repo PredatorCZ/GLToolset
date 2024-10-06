@@ -1467,6 +1467,7 @@ public:
     {
         SQInteger base = -1;
         SQInteger attrs = -1;
+        SQInteger className = _fs->TopTarget();
         if(_token == TK_EXTENDS) {
             Lex(); Expression();
             base = _fs->TopTarget();
@@ -1481,6 +1482,7 @@ public:
         if(attrs != -1) _fs->PopTarget();
         if(base != -1) _fs->PopTarget();
         _fs->AddInstruction(_OP_NEWOBJ, _fs->PushTarget(), base, attrs,NOT_CLASS);
+        _fs->_instructions.back().asClass._arg5 = className;
         ParseTableOrClass(_SC(';'),_SC('}'));
     }
     void DeleteExpr()

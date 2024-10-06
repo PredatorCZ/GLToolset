@@ -109,18 +109,21 @@ struct SQInstructionDesc {
 struct SQInstruction
 {
     SQInstruction(){};
-    SQInstruction(SQOpcode _op,SQInteger a0=0,SQInteger a1=0,SQInteger a2=0,SQInteger a3=0)
-    {   op = (unsigned char)_op;
-        _arg0 = (unsigned char)a0;_arg1 = (SQInt32)a1;
-        _arg2 = (unsigned char)a2;_arg3 = (unsigned char)a3;
-    }
+    SQInstruction(SQOpcode _op,SQInteger a0=0,SQInteger a1=0,SQInteger a2=0,SQInteger a3=0):
+    op{(unsigned char)_op}, _arg0{(unsigned char)a0}, _arg2{(unsigned char)a2}, _arg3{(unsigned char)a3}, _arg1{(signed)a1}{}
 
-
-    SQInt32 _arg1;
     unsigned char op;
     unsigned char _arg0;
     unsigned char _arg2;
     unsigned char _arg3;
+    union {
+        signed _arg1;
+        struct {
+            short _arg1;
+            unsigned char _arg4;
+            unsigned char _arg5;
+        } asClass;
+    };
 };
 
 #include "squtils.h"

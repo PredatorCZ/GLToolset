@@ -504,7 +504,7 @@ bool SQVM::DerefInc(SQInteger op,SQObjectPtr &target, SQObjectPtr &self, SQObjec
 #define arg0 (_i_._arg0)
 #define sarg0 ((SQInteger)*((const signed char *)&_i_._arg0))
 #define arg1 (_i_._arg1)
-#define sarg1 (*((const SQInt32 *)&_i_._arg1))
+#define sarg1 (*((const signed short *)&_i_._arg1))
 #define arg2 (_i_._arg2)
 #define arg3 (_i_._arg3)
 #define sarg3 ((SQInteger)*((const signed char *)&_i_._arg3))
@@ -629,7 +629,7 @@ bool SQVM::CLOSURE_OP(SQObjectPtr &target, SQFunctionProto *func,SQInteger bound
 }
 
 
-bool SQVM::CLASS_OP(SQObjectPtr &target,SQInteger baseclass,SQInteger attributes)
+bool SQVM::CLASS_OP(SQObjectPtr &target,SQInteger name, SQInteger baseclass,SQInteger attributes)
 {
     SQClass *base = NULL;
     SQObjectPtr attrs;
@@ -652,6 +652,7 @@ bool SQVM::CLASS_OP(SQObjectPtr &target,SQInteger baseclass,SQInteger attributes
         Pop(nparams);
     }
     _class(target)->_attributes = attrs;
+    _class(target)->_name = _string(_stack._vals[_stackbase + name]);
     return true;
 }
 
@@ -929,7 +930,7 @@ exception_restore:
                 switch(arg3) {
                     case NOT_TABLE: TARGET = SQTable::Create(_ss(this), arg1); continue;
                     case NOT_ARRAY: TARGET = SQArray::Create(_ss(this), 0); _array(TARGET)->Reserve(arg1); continue;
-                    case NOT_CLASS: _GUARD(CLASS_OP(TARGET,arg1,arg2)); continue;
+                    case NOT_CLASS: _GUARD(CLASS_OP(TARGET,_i_.asClass._arg5,_i_.asClass._arg1,arg2)); continue;
                     default: assert(0); continue;
                 }
             case _OP_APPENDARRAY:
