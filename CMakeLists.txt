@@ -19,7 +19,6 @@ set_target_properties(spike_cli PROPERTIES OUTPUT_NAME gl_toolset)
 
 add_subdirectory(${TPD_PATH}/imgui)
 add_subdirectory(${TPD_PATH}/simplecpp)
-add_subdirectory(flatbuffers EXCLUDE_FROM_ALL)
 add_subdirectory(${TPD_PATH}/ispctex EXCLUDE_FROM_ALL)
 
 build_target(
@@ -84,7 +83,6 @@ build_target(
 target_include_directories(prime PUBLIC src/shaders)
 
 add_subdirectory(gltex_view)
-add_subdirectory(frame_designer)
 
 add_spike_subdir(gltex)
 add_spike_subdir(glmod)

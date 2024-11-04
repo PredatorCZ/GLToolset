@@ -1,8 +1,0 @@
-include "common/math.idl.fbs";
-
-namespace prime.common;
-
-struct AABB {
-    center:Vector4A16;
-    bounds:Vector4A16;
-}
