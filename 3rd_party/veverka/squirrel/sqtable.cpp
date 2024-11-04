@@ -4,8 +4,6 @@ see copyright notice in squirrel.h
 #include "sqpcheader.h"
 #include "sqvm.h"
 #include "sqtable.h"
-#include "sqfuncproto.h"
-#include "sqclosure.h"
 
 SQTable::SQTable(SQSharedState *ss,SQInteger nInitialSize)
 {

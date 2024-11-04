@@ -4,6 +4,8 @@
 
 #include "sqopcodes.h"
 #include "sqobject.h"
+#include <vector>
+
 #define MAX_NATIVE_CALLS 100
 #define MIN_STACK_OVERHEAD 15
 
@@ -29,7 +31,7 @@ struct SQExceptionTrap{
 
 #define _INLINE
 
-typedef sqvector<SQExceptionTrap> ExceptionsTraps;
+typedef std::vector<SQExceptionTrap> ExceptionsTraps;
 
 struct SQVM : public CHAINABLE_OBJ
 {
@@ -47,7 +49,7 @@ struct SQVM : public CHAINABLE_OBJ
         SQBool _root;
     };
 
-typedef sqvector<CallInfo> CallInfoVec;
+typedef std::vector<CallInfo> CallInfoVec;
 public:
     void DebugHookProxy(SQInteger type, const SQChar * sourcename, SQInteger line, const SQChar * funcname);
     static void _DebugHookProxy(HSQUIRRELVM v, SQInteger type, const SQChar * sourcename, SQInteger line, const SQChar * funcname);
@@ -162,7 +164,7 @@ public:
     CallInfo* _callsstack;
     SQInteger _callsstacksize;
     SQInteger _alloccallsstacksize;
-    sqvector<CallInfo>  _callstackdata;
+    std::vector<CallInfo>  _callstackdata;
 
     ExceptionsTraps _etraps;
     CallInfo *ci;

@@ -127,7 +127,8 @@ struct SQInstruction
 };
 
 #include "squtils.h"
-typedef sqvector<SQInstruction> SQInstructionVec;
+#include <vector>
+typedef std::vector<SQInstruction> SQInstructionVec;
 
 #define NEW_SLOT_ATTRIBUTES_FLAG    0x01
 #define NEW_SLOT_STATIC_FLAG        0x02

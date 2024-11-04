@@ -3,6 +3,62 @@
 #define _SQFUNCSTATE_H_
 ///////////////////////////////////
 #include "squtils.h"
+#include "sqcompiler.h"
+#include <memory>
+#include <vector>
+
+enum SQOuterType {
+    otLOCAL = 0,
+    otOUTER = 1
+};
+
+struct SQOuterVar
+{
+
+    SQOuterVar(){}
+    SQOuterVar(const SQObjectPtr &name,const SQObjectPtr &src,SQOuterType t)
+    {
+        _name = name;
+        _src=src;
+        _type=t;
+    }
+    SQOuterVar(const SQOuterVar &ov)
+    {
+        _type=ov._type;
+        _src=ov._src;
+        _name=ov._name;
+    }
+    SQOuterType _type;
+    SQObjectPtr _name;
+    SQObjectPtr _src;
+};
+
+struct SQLocalVarInfo
+{
+    SQLocalVarInfo():_start_op(0),_end_op(0),_pos(0){}
+    SQLocalVarInfo(const SQLocalVarInfo &lvi)
+    {
+        _name=lvi._name;
+        _start_op=lvi._start_op;
+        _end_op=lvi._end_op;
+        _pos=lvi._pos;
+    }
+    SQObjectPtr _name;
+    SQUnsignedInteger _start_op;
+    SQUnsignedInteger _end_op;
+    SQUnsignedInteger _pos;
+};
+
+struct SQLineInfo { SQInteger _line;SQInteger _op; };
+
+namespace prime::utils {
+    struct PlayGround;
+}
+
+typedef std::vector<std::unique_ptr<prime::utils::PlayGround>> SQFunctionVec;
+typedef std::vector<SQOuterVar> SQOuterVarVec;
+typedef std::vector<SQLocalVarInfo> SQLocalVarInfoVec;
+typedef std::vector<SQLineInfo> SQLineInfoVec;
 
 struct SQFuncState
 {
@@ -38,7 +94,6 @@ struct SQFuncState
     SQInteger GetStackSize();
     SQInteger CalcStackFrameSize();
     void AddLineInfos(SQInteger line,bool lineop,bool force=false);
-    SQFunctionProto *BuildProto();
     SQInteger AllocStackPos();
     SQInteger PushTarget(SQInteger n=-1);
     SQInteger PopTarget();
@@ -57,7 +112,7 @@ struct SQFuncState
     bool _bgenerator;
     SQIntVec _unresolvedbreaks;
     SQIntVec _unresolvedcontinues;
-    SQObjectPtrVec _functions;
+    SQFunctionVec _functions;
     SQObjectPtrVec _parameters;
     SQOuterVarVec _outervalues;
     SQInstructionVec _instructions;
@@ -78,7 +133,7 @@ struct SQFuncState
     SQInteger _outers;
     bool _optimization;
     SQSharedState *_sharedstate;
-    sqvector<SQFuncState*> _childstates;
+    std::vector<SQFuncState*> _childstates;
     SQInteger GetConstant(const SQObject &cons);
 private:
     CompilerErrorFunc _errfunc;

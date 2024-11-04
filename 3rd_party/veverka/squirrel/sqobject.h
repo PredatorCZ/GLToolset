@@ -3,6 +3,7 @@
 #define _SQOBJECT_H_
 
 #include "squtils.h"
+#include <vector>
 
 #ifdef _SQ64
 #define UINT_MINUS_ONE (0xFFFFFFFFFFFFFFFF)
@@ -343,8 +344,8 @@ struct SQDelegable : public CHAINABLE_OBJ {
 };
 
 SQUnsignedInteger TranslateIndex(const SQObjectPtr &idx);
-typedef sqvector<SQObjectPtr> SQObjectPtrVec;
-typedef sqvector<SQInteger> SQIntVec;
+typedef std::vector<SQObjectPtr> SQObjectPtrVec;
+typedef std::vector<SQInteger> SQIntVec;
 const SQChar *GetTypeName(const SQObjectPtr &obj1);
 const SQChar *IdType2Name(SQObjectType type);
 

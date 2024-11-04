@@ -54,7 +54,7 @@ public:
         //nothing to iterate anymore
         return -1;
     }
-    SQArray *Clone(){SQArray *anew=Create(_opt_ss(this),0); anew->_values.copy(_values); return anew; }
+    SQArray *Clone(){SQArray *anew=Create(_opt_ss(this),0); anew->_values = _values; return anew; }
     SQInteger Size() const {return _values.size();}
     void Resize(SQInteger size)
     {
@@ -65,22 +65,22 @@ public:
     void Reserve(SQInteger size) { _values.reserve(size); }
     void Append(const SQObject &o){_values.push_back(o);}
     void Extend(const SQArray *a);
-    SQObjectPtr &Top(){return _values.top();}
+    SQObjectPtr &Top(){return _values.back();}
     void Pop(){_values.pop_back(); ShrinkIfNeeded(); }
     bool Insert(SQInteger idx,const SQObject &val){
         if(idx < 0 || idx > (SQInteger)_values.size())
             return false;
-        _values.insert(idx,val);
+        _values.insert(std::next(_values.begin(),idx),val);
         return true;
     }
     void ShrinkIfNeeded() {
         if(_values.size() <= _values.capacity()>>2) //shrink the array
-            _values.shrinktofit();
+            _values.shrink_to_fit();
     }
     bool Remove(SQInteger idx){
         if(idx < 0 || idx >= (SQInteger)_values.size())
             return false;
-        _values.remove(idx);
+        _values.erase(std::next(_values.begin(),idx));
         ShrinkIfNeeded();
         return true;
     }

@@ -4,6 +4,8 @@
 
 #include "squtils.h"
 #include "sqobject.h"
+#include <vector>
+
 struct SQString;
 struct SQTable;
 //max number of character for a printed number
