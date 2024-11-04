@@ -1,5 +1,6 @@
 #pragma once
 #include "spike/crypto/jenkinshash.hpp"
+#include "spike/crypto/jenkinshash3.hpp"
 #include "spike/except.hpp"
 #include <string_view>
 
@@ -21,36 +22,47 @@
   }
 
 #define CLASS_VERSION(version)                                                 \
-  common::Resource {                                                           \
+  common::ResourceBase {                                                       \
     common::GetClassHash<std::decay_t<decltype(*this)>>(), version             \
   }
 
 #define CLASS_RESOURCE(version_, ...)                                          \
   CLASS_EXT(__VA_ARGS__)                                                       \
   template <>                                                                  \
-  constexpr prime::common::Resource                                            \
+  constexpr prime::common::ResourceBase                                        \
   prime::common::ClassResource<__VA_ARGS__>() {                                \
-    return Resource{.hash = GetClassHash<__VA_ARGS__>(), .version = version_}; \
+    return ResourceBase{.hash = GetClassHash<__VA_ARGS__>(),                   \
+                        .version = version_};                                  \
   }
 
 namespace prime::common {
+template <typename, typename = void> constexpr bool is_type_complete_v = false;
+
+template <typename T>
+constexpr bool is_type_complete_v<T, std::void_t<decltype(sizeof(T))>> = true;
+
 template <class C> constexpr uint32 GetClassHash() { return 0; }
 template <> constexpr uint32 GetClassHash<char>() {
   return JenkinsHash_("prime::common::String");
 }
 
-struct Resource {
+struct ResourceBase {
   uint32 hash;
-  uint32 version;
+  uint16 version;
+  uint8 maxAlign = alignof(ResourceBase);
 
-  constexpr bool operator!=(Resource o) const {
+  constexpr bool operator!=(ResourceBase o) const {
     return hash != o.hash || version != o.version;
   }
 };
 
-template <class C> constexpr Resource ClassResource();
+template <class C> constexpr ResourceBase ClassResource();
 
 template <class C> constexpr std::string_view GetClassName();
+
+template <class C> struct Resource : ResourceBase {
+  Resource() : ResourceBase{ClassResource<C>()} {}
+};
 
 union ExtString {
   uint64 raw = 0;
@@ -130,7 +142,7 @@ consteval uint64 ExtensionFromClassName(std::string_view fullName) {
 }
 
 template <class C> void ValidateClass(const C &item) {
-  const C dummy;
+  const Resource<C> dummy;
   if (item.hash != dummy.hash) {
     throw es::InvalidHeaderError(item.hash);
   }
@@ -148,6 +160,28 @@ uint32 RegisterClass(ExtString ext, uint32 obj);
 template <class C> class RegistryInvokeGuard;
 } // namespace detail
 } // namespace prime::common
+
+HASH_CLASS(uint8);
+HASH_CLASS(uint16);
+HASH_CLASS(uint32);
+HASH_CLASS(int16);
+HASH_CLASS(int32);
+HASH_CLASS(float);
+HASH_CLASS(JenHash);
+HASH_CLASS(JenHash3);
+
+union Color {
+  struct {
+    uint8 r;
+    uint8 g;
+    uint8 b;
+    uint8 a;
+  };
+
+  uint8 value;
+};
+
+HASH_CLASS(Color);
 
 #define REGISTER_CLASS(...)                                                    \
   template <> class prime::common::detail::RegistryInvokeGuard<__VA_ARGS__> {  \

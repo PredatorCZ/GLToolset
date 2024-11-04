@@ -1,38 +1,9 @@
 #pragma once
-#include "core.hpp"
+#include "pointer.hpp"
 #include "spike/crypto/jenkinshash3.hpp"
 #include <string>
 
 namespace prime::common {
-union ResourceHash {
-  uint64 hash = 0;
-  struct {
-    uint32 name;
-    uint32 type;
-  };
-
-  ResourceHash() = default;
-  ResourceHash(const ResourceHash &) = default;
-  explicit ResourceHash(uint64 hash_) : hash(hash_) {}
-  explicit ResourceHash(uint32 name_) : name(name_) {}
-  explicit ResourceHash(uint32 name_, uint32 type_)
-      : name(name_), type(type_) {}
-  bool operator<(const ResourceHash &other) const { return hash < other.hash; }
-};
-
-template <class C> union ResourcePtr {
-  ResourceHash resourceHash{};
-  C *resourcePtr;
-
-  operator C *() { return resourcePtr; }
-  C *operator->() { return resourcePtr; }
-};
-
-template <typename, typename = void> constexpr bool is_type_complete_v = false;
-
-template <typename T>
-constexpr bool is_type_complete_v<T, std::void_t<decltype(sizeof(T))>> = true;
-
 template <class C> ResourceHash MakeHash(uint32 name) {
   return ResourceHash{name, GetClassHash<C>()};
 }
@@ -51,7 +22,7 @@ struct ResourceData {
     C *item = reinterpret_cast<C *>(buffer.data());
 
     if constexpr (is_type_complete_v<C>) {
-      if constexpr (std::is_base_of_v<Resource, C>) {
+      if constexpr (std::is_base_of_v<ResourceBase, C>) {
         ValidateClass(*item);
       }
     }
@@ -64,6 +35,8 @@ struct ResourceData {
 ResourceData LoadResource(const std::string &path);
 ResourceData &FindResource(const void *address);
 
+void ProjectDataFolder(std::string_view path);
+std::string ProjectDataFolder();
 void AddWorkingFolder(std::string path);
 void FreeResource(ResourceData &resource);
 void ReplaceResource(ResourceData &oldResource, ResourceData &newResource);
@@ -86,7 +59,6 @@ template <class C> struct InvokeGuard;
 struct ResourceHandle {
   void (*Process)(ResourceData &res);
   void (*Delete)(ResourceData &res);
-  void *(*Handle)(ResourceData &res);
   void (*Update)(ResourceHash object) = nullptr;
 };
 
@@ -99,17 +71,19 @@ template <class C> bool AddResourceHandle(ResourceHandle handle) {
 void *GetResourceHandle(ResourceData &data);
 const ResourceHandle &GetClassHandle(uint32 classHash);
 
-template <class C> C *LinkResource(ResourceHash &resourceHash) {
-  auto &resData = LoadResource(resourceHash);
-  ResourcePtr<C> mut;
-  mut.resourcePtr = static_cast<C *>(GetResourceHandle(resData));
-  resourceHash = mut.resourceHash;
+template <class C> C *LinkResource(Pointer<C> &resource) {
+  if (resource.isLinked) {
+    return resource;
+  }
+
+  auto &resData = LoadResource(resource.resourceHash);
+  resource.resourcePtr = static_cast<C *>(GetResourceHandle(resData));
   resData.numRefs++;
 
-  return mut.resourcePtr;
+  return resource;
 }
 
-void UnlinkResource(Resource *ptr);
+void UnlinkResource(ResourceBase *ptr);
 
 void PollUpdates();
 

@@ -1,5 +1,6 @@
 #include "mikktspace.h"
 #include "spike/app_context.hpp"
+#include "spike/crypto/crc32.hpp"
 #include "spike/io/binreader_stream.hpp"
 #include "spike/io/binwritter_stream.hpp"
 #include "spike/master_printer.hpp"
@@ -12,16 +13,15 @@
 #include <GL/gl.h>
 #include <GL/glext.h>
 
+#include "common/aabb.hpp"
+#include "graphics/detail/model_single.hpp"
+#include "graphics/detail/vertex_array.hpp"
 #include "graphics/sampler.hpp"
+#include "graphics/texture.hpp"
 #include "utils/debug.hpp"
-#include "utils/flatbuffers.hpp"
 #include "utils/instancetm_builder.hpp"
+#include "utils/playground.hpp"
 #include "utils/shader_preprocessor.hpp"
-#include "utils/texture.hpp"
-
-#include "model_single.fbs.hpp"
-#include "texture.fbs.hpp"
-#include "vertex.fbs.hpp"
 
 namespace MD2 {
 struct Skin {
@@ -221,6 +221,7 @@ inline bool fltcmp(float f0, float f1, float epsilon = 0.0001) {
 namespace prime::utils {
 void ProcessMD2(AppContext *ctx) {
   std::string buffer = ctx->GetBuffer();
+  const uint32 inputCrc = crc32b(0, buffer.data(), buffer.size());
   auto &hdr = *reinterpret_cast<MD2::Header *>(buffer.data());
 
   using namespace MD2;
@@ -506,8 +507,10 @@ void ProcessMD2(AppContext *ctx) {
 
   namespace pg = prime::graphics;
   namespace pc = prime::common;
+  namespace pu = prime::utils;
 
-  prime::utils::ResourceDebug currentDebug;
+  prime::utils::ResourceDebugPlayground debugVayPg;
+  debugVayPg.main->inputCrc = inputCrc;
 
   // Dump position buffer
   auto outFile = std::string(ctx->workingFile.GetFullPathNoExt());
@@ -520,8 +523,8 @@ void ProcessMD2(AppContext *ctx) {
     auto nctx = ctx->NewFile(outFile);
     outPath.Load(nctx.fullPath.data() + nctx.delimiter);
     outDir = nctx.fullPath.substr(0, nctx.delimiter);
-    posHash = currentDebug.AddRef(outPath.GetFullPathNoExt(),
-                                  pc::GetClassHash<pg::VertexVshData>());
+    posHash = debugVayPg.AddRef(outPath.GetFullPathNoExt(),
+                                pc::GetClassHash<pg::VertexVshData>());
     BinWritterRef wrh(nctx.str);
 
     for (auto &v : oVertices) {
@@ -536,8 +539,8 @@ void ProcessMD2(AppContext *ctx) {
 
   {
     auto nctx = ctx->NewFile(outFile);
-    indicesHash = currentDebug.AddRef(outPath.GetFullPathNoExt(),
-                                      pc::GetClassHash<pg::VertexIndexData>());
+    indicesHash = debugVayPg.AddRef(outPath.GetFullPathNoExt(),
+                                    pc::GetClassHash<pg::VertexIndexData>());
     BinWritterRef wrh(nctx.str);
     wrh.WriteContainer(indices);
   }
@@ -558,8 +561,8 @@ void ProcessMD2(AppContext *ctx) {
 
   {
     auto nctx = ctx->NewFile(outFile);
-    pixelHash = currentDebug.AddRef(outPath.GetFullPathNoExt(),
-                                    pc::GetClassHash<pg::VertexPshData>());
+    pixelHash = debugVayPg.AddRef(outPath.GetFullPathNoExt(),
+                                  pc::GetClassHash<pg::VertexPshData>());
     BinWritterRef wrh(nctx.str);
 
     for (size_t v = 0; v < oVertices.size(); v++) {
@@ -576,76 +579,84 @@ void ProcessMD2(AppContext *ctx) {
 
   // Create vertex arrays
   pc::ResourceHash vayHash;
+  prime::utils::ResourceDebugPlayground debugPg;
+  debugPg.main->inputCrc = inputCrc;
   {
     outFile =
         outPath.ChangeExtension2(pc::GetClassExtension<pg::VertexArray>());
 
-    flatbuffers::FlatBufferBuilder builder(1024);
-    auto dbgPtr = currentDebug.Build(builder);
-    es::Dispose(currentDebug);
+    vayHash = debugPg.AddRef(outPath.GetFullPathNoExt(),
+                             pc::GetClassHash<pg::VertexArray>());
 
-    vayHash = currentDebug.AddRef(outPath.GetFullPathNoExt(),
-                                  pc::GetClassHash<pg::VertexArray>());
-
-    std::vector<flatbuffers::Offset<pg::VertexBuffer>> buffers;
+    pu::PlayGround vtArrayPg;
+    pu::PlayGround::Pointer<pg::VertexArray> vtArray(
+        vtArrayPg.AddClass<pg::VertexArray>());
 
     {
-      std::vector<pg::VertexAttribute> attrs;
-      attrs.emplace_back(pg::VertexType::Position, 3, GL_UNSIGNED_BYTE, false,
-                         0);
-      buffers.emplace_back(pg::CreateVertexBuffer(
-          builder, builder.CreateVectorOfStructs(attrs), &posHash,
-          4 * oVertices.size(), GL_ARRAY_BUFFER, GL_STATIC_DRAW, 4));
+      pu::PlayGround::Pointer<pg::VertexBuffer> curBuffer(
+          vtArrayPg.ArrayEmplace(vtArray->buffers));
+
+      vtArrayPg.ArrayEmplace(curBuffer->attributes, pg::VertexType::Position, 3,
+                             GL_UNSIGNED_BYTE, false, 0);
+
+      curBuffer->buffer = posHash;
+      curBuffer->size = 4 * oVertices.size();
+      curBuffer->stride = 4;
+      curBuffer->target = GL_ARRAY_BUFFER;
+      curBuffer->usage = GL_STATIC_DRAW;
     }
 
     {
-      std::vector<pg::VertexAttribute> attrs;
-      attrs.emplace_back(pg::VertexType::Tangent, 4, GL_SHORT, true, 0);
-      attrs.emplace_back(pg::VertexType::TexCoord2, 2, GL_UNSIGNED_SHORT, false,
-                         8);
-      buffers.emplace_back(pg::CreateVertexBuffer(
-          builder, builder.CreateVectorOfStructs(attrs), &pixelHash,
-          12 * oVertices.size(), GL_ARRAY_BUFFER, GL_STATIC_DRAW, 12));
+      pu::PlayGround::Pointer<pg::VertexBuffer> curBuffer(
+          vtArrayPg.ArrayEmplace(vtArray->buffers));
+
+      vtArrayPg.ArrayEmplace(curBuffer->attributes, pg::VertexType::Tangent, 4,
+                             GL_SHORT, true, 0);
+      vtArrayPg.ArrayEmplace(curBuffer->attributes, pg::VertexType::TexCoord2,
+                             2, GL_UNSIGNED_SHORT, false, 8);
+
+      curBuffer->buffer = pixelHash;
+      curBuffer->size = 12 * oVertices.size();
+      curBuffer->stride = 12;
+      curBuffer->target = GL_ARRAY_BUFFER;
+      curBuffer->usage = GL_STATIC_DRAW;
     }
 
-    buffers.emplace_back(
-        pg::CreateVertexBuffer(builder, 0, &indicesHash, 2 * indices.size(),
-                               GL_ELEMENT_ARRAY_BUFFER, GL_STATIC_DRAW, 0));
+    {
+      pu::PlayGround::Pointer<pg::VertexBuffer> curBuffer(
+          vtArrayPg.ArrayEmplace(vtArray->buffers));
 
-    auto buffersPtr = builder.CreateVector(buffers);
+      curBuffer->buffer = indicesHash;
+      curBuffer->size = 2 * indices.size();
+      curBuffer->stride = 0;
+      curBuffer->target = GL_ELEMENT_ARRAY_BUFFER;
+      curBuffer->usage = GL_STATIC_DRAW;
+    }
 
-    std::vector<pc::Transform> transforms;
-    transforms.emplace_back(pc::Transform{
-        .tm =
-            {
-                {1, 0, 0, 0},
-                {frame->offset.x, frame->offset.y, frame->offset.z},
-            },
-        .inflate = {frame->scale.x, frame->scale.y, frame->scale.z},
-    });
+    vtArrayPg.ArrayEmplace(
+        vtArray->transforms,
+        pc::Transform{
+            .tm =
+                {
+                    {1, 0, 0, 0},
+                    {frame->offset.x, frame->offset.y, frame->offset.z},
+                },
+            .inflate = {frame->scale.x, frame->scale.y, frame->scale.z},
+        });
 
-    auto tmsPtr = builder.CreateVectorOfStructs(transforms);
-
-    std::vector<glm::vec4> uvTransforms;
     uvMax -= uvMin;
     uvMax *= 1.f / 0xffff;
-    uvTransforms.emplace_back(uvMin.x, uvMin.y, uvMax.x, uvMax.y);
 
-    auto uvtmsPtr = builder.CreateVectorOfStructs(uvTransforms);
-    const int8_t uvRemaps[]{0};
-    auto uvRemapsPtr = builder.CreateVector(uvRemaps, sizeof(uvRemaps));
+    vtArrayPg.ArrayEmplace(vtArray->uvTransform, uvMin.x, uvMin.y, uvMax.x,
+                           uvMax.y);
+    vtArrayPg.ArrayEmplace(vtArray->uvTransforRemaps, 0);
 
-    pg::VertexArrayBuilder varBuild(builder);
-    varBuild.add_buffers(buffersPtr);
-    varBuild.add_transforms(tmsPtr);
-    varBuild.add_uvTransforms(uvtmsPtr);
-    varBuild.add_count(indices.size());
-    varBuild.add_mode(GL_TRIANGLES);
-    varBuild.add_type(GL_UNSIGNED_SHORT);
-    varBuild.add_uvTransformRemaps(uvRemapsPtr);
-    varBuild.add_index(-1);
-    varBuild.add_tsType(pg::TSType::QTangent);
-    varBuild.add_debugInfo(dbgPtr);
+    vtArray->count = indices.size();
+    vtArray->mode = GL_TRIANGLES;
+    vtArray->type = GL_UNSIGNED_SHORT;
+    vtArray->index = -1;
+    vtArray->tsType = pg::TSType::QTangent;
+
     pc::AABB aabb_{
         .center = (uData.max + uData.min) / 2,
         .bounds = uData.max,
@@ -654,67 +665,39 @@ void ProcessMD2(AppContext *ctx) {
     aabb_.bounds.w =
         std::max(std::max(aabb_.bounds.x, aabb_.bounds.y), aabb_.bounds.z);
 
-    varBuild.add_aabb(&aabb_);
+    vtArray->aabb = aabb_;
 
-    prime::utils::FinishFlatBuffer(varBuild);
+    std::string built = debugVayPg.Build<pg::VertexArray>(vtArrayPg);
 
     BinWritterRef wrh(ctx->NewFile(outFile).str);
-    wrh.WriteBuffer(reinterpret_cast<char *>(builder.GetBufferPointer()),
-                    builder.GetSize());
+    wrh.WriteContainer(built);
   }
 
   // Create single model
   {
-    flatbuffers::FlatBufferBuilder builder(1024);
+    pu::PlayGround modelPg;
+    pu::PlayGround::Pointer<pg::ModelSingle> model(
+        modelPg.AddClass<pg::ModelSingle>());
 
     AFileInfo textureFile(hdr.skins->path);
     AFileInfo newBranch(textureFile.CatchBranch(outFile));
 
-    static const auto extD = pc::GetClassExtension<pg::TextureStream<0>>();
-    static std::string_view ext(extD);
-
     struct TextureSlot {
-      uint32 hash;
+      JenHash3 hash;
       std::string_view slot;
     };
 
     std::vector<TextureSlot> textures;
 
-    auto AddStreams = [ctx, &currentDebug, &outDir](std::string &mainPath) {
-      size_t numStreams = 4;
-
-      try {
-        auto texStream = ctx->RequestFile(outDir + mainPath);
-        BinReaderRef txrd(*texStream.Get());
-        std::string txBuffer;
-        txrd.ReadContainer(txBuffer, txrd.GetSize());
-        auto txHdr = prime::utils::GetFlatbuffer<pg::Texture>(txBuffer);
-        numStreams = txHdr->info()->numStreams();
-      } catch (...) {
-      }
-
-      for (size_t s = 0; s < numStreams; s++) {
-        std::string texStream(AFileInfo(mainPath).GetFullPathNoExt());
-        currentDebug.AddRef(texStream,
-                            prime::utils::RedirectTexture({}, s).type);
-      }
-    };
-
     static const auto texExt = pc::GetClassExtension<pg::Texture>();
 
     {
       auto outTexture = newBranch.ChangeExtension2(texExt);
-      auto texHash = currentDebug.AddRef(newBranch.GetFullPathNoExt(),
-                                         pc::GetClassHash<pg::Texture>());
-      AddStreams(outTexture);
+      auto texHash = debugPg.AddRef(newBranch.GetFullPathNoExt(),
+                                    pc::GetClassHash<pg::Texture>());
       textures.emplace_back(
-          TextureSlot{texHash.name, currentDebug.AddString("smAlbedo")});
+          TextureSlot{texHash.name, debugPg.AddString("smAlbedo")});
     }
-
-    std::vector<std::string_view> defines({
-        /**/ //
-        "NUM_LIGHTS=6",
-    });
 
     try {
       ctx->FindFile(outDir + std::string(newBranch.GetFolder()),
@@ -723,12 +706,14 @@ void ProcessMD2(AppContext *ctx) {
       std::string normalTexture(
           newBranch.ChangeExtension("_normal." + std::string(texExt)));
 
-      auto texHash = currentDebug.AddRef(newBranch.ChangeExtension("_normal"),
-                                         pc::GetClassHash<pg::Texture>());
-      AddStreams(normalTexture);
+      auto texHash = debugPg.AddRef(newBranch.ChangeExtension("_normal"),
+                                    pc::GetClassHash<pg::Texture>());
       textures.emplace_back(
-          TextureSlot{texHash.name, currentDebug.AddString("smNormal")});
-      defines.emplace_back("PS_IN_NORMAL");
+          TextureSlot{texHash.name, debugPg.AddString("smNormal")});
+
+      pu::PlayGround::Pointer<pc::LocalArray16<char>> newDef =
+          modelPg.ArrayEmplace(model->program.definitions);
+      modelPg.NewString(*newDef, "PS_IN_NORMAL");
     } catch (const es::FileNotFoundError &) {
     }
 
@@ -739,88 +724,46 @@ void ProcessMD2(AppContext *ctx) {
       std::string glowTexture(
           newBranch.ChangeExtension("_fx." + std::string(texExt)));
 
-      auto texHash = currentDebug.AddRef(newBranch.ChangeExtension("_fx"),
-                                         pc::GetClassHash<pg::Texture>());
-      AddStreams(glowTexture);
+      auto texHash = debugPg.AddRef(newBranch.ChangeExtension("_fx"),
+                                    pc::GetClassHash<pg::Texture>());
       textures.emplace_back(
-          TextureSlot{texHash.name, currentDebug.AddString("smGlow")});
-      defines.emplace_back("PS_IN_GLOW");
+          TextureSlot{texHash.name, debugPg.AddString("smGlow")});
+
+      pu::PlayGround::Pointer<pc::LocalArray16<char>> newDef =
+          modelPg.ArrayEmplace(model->program.definitions);
+      modelPg.NewString(*newDef, "PS_IN_GLOW");
     } catch (const es::FileNotFoundError &) {
     }
 
-    auto definesPtr = [&] {
-      std::vector<flatbuffers::Offset<flatbuffers::String>> offsets;
-      for (auto s : defines) {
-        offsets.emplace_back(builder.CreateString(s));
-      }
-      return builder.CreateVector(offsets);
-    }();
+    modelPg.ArrayEmplace(
+        model->program.stages,
+        debugPg.AddRef("simple_model/main.vert", pc::GetClassHash<char>()).name,
+        0, GL_VERTEX_SHADER);
 
-    auto stagesPtr = [&] {
-      std::vector<pg::StageObject> objects;
-      objects.emplace_back(
-          currentDebug
-              .AddRef("simple_model/main.vert", pc::GetClassHash<char>())
-              .name,
-          0, GL_VERTEX_SHADER);
-      objects.emplace_back(
-          currentDebug
-              .AddRef("simple_model/main.frag", pc::GetClassHash<char>())
-              .name,
-          0, GL_FRAGMENT_SHADER);
-      return builder.CreateVectorOfStructs(objects);
-    }();
+    modelPg.ArrayEmplace(
+        model->program.stages,
+        debugPg.AddRef("simple_model/main.frag", pc::GetClassHash<char>()).name,
+        0, GL_FRAGMENT_SHADER);
 
-    pg::ProgramBuilder pgmBuilder(builder);
-    pgmBuilder.add_definitions(definesPtr);
-    pgmBuilder.add_stages(stagesPtr);
-    pgmBuilder.add_program(-1);
-    auto pgmPtr = pgmBuilder.Finish();
+    for (auto &t : textures) {
+      modelPg.ArrayEmplace(
+          model->textures, t.hash, debugPg.AddString(t.slot),
+          debugPg.AddRef("res/default", pc::GetClassHash<pg::Sampler>()).name,
+          0, 0);
+    }
 
-    auto texturesPtr = [&] {
-      std::vector<pg::SampledTexture> textures_;
-      for (auto &t : textures) {
-        textures_.emplace_back(
-            t.hash, JenkinsHash_(currentDebug.AddString(t.slot)),
-            currentDebug.AddRef("res/default", pc::GetClassHash<pg::Sampler>())
-                .name,
-            0, 0);
-      }
-
-      return builder.CreateVectorOfStructs(textures_);
-    }();
-
-    auto uniBlocksPtr = [&] {
-      std::vector<pg::UniformBlock> ublocks;
-      ublocks.emplace_back(
-          currentDebug.AddRef("main_uniform",
-                              pc::GetClassHash<pg::UniformBlockData>()),
-          JenkinsHash_(currentDebug.AddString("ubFragmentProperties")), 0, 0,
-          0);
-
-      return builder.CreateVectorOfStructs(ublocks);
-    }();
-
-    auto vayPtr = builder.CreateStruct(vayHash);
-    pg::ModelRuntime runtimeDummy{};
-    auto dbgPtr = currentDebug.Build(builder);
-
-    pg::ModelSingleBuilder mdlBuilder(builder);
-    mdlBuilder.add_debugInfo(dbgPtr);
-    mdlBuilder.add_program(pgmPtr);
-    mdlBuilder.add_textures(texturesPtr);
-    mdlBuilder.add_uniformBlocks(uniBlocksPtr);
-    mdlBuilder.add_runtime(&runtimeDummy);
-    mdlBuilder.add_vertexArray_type(pc::ResourceVar::ResourceVar_hash);
-    mdlBuilder.add_vertexArray(vayPtr.Union());
-
-    prime::utils::FinishFlatBuffer(mdlBuilder);
+    modelPg.ArrayEmplace(
+        model->uniformBlocks,
+        debugPg.AddRef("main_uniform",
+                       pc::GetClassHash<pg::UniformBlockData>()),
+        JenkinsHash_(debugPg.AddString("ubFragmentProperties")), 0, 0, 0);
 
     outFile = ctx->workingFile.ChangeExtension2(
         pc::GetClassExtension<pg::ModelSingle>());
+
+    std::string built = debugPg.Build<pg::ModelSingle>(modelPg);
     BinWritterRef wrh(ctx->NewFile(outFile).str);
-    wrh.WriteBuffer(reinterpret_cast<char *>(builder.GetBufferPointer()),
-                    builder.GetSize());
+    wrh.WriteContainer(built);
   }
 }
 } // namespace prime::utils

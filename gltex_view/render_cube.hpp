@@ -1,24 +1,25 @@
-#include "model_single.fbs.hpp"
+#include "graphics/detail/model_single.hpp"
+#include "graphics/detail/vertex_array.hpp"
 #include "scene_program.hpp"
-#include "vertex.fbs.hpp"
+#include "utils/playground.hpp"
 
-const prime::graphics::VertexArray *GetCubeVertexArray() {
-  static const prime::graphics::VertexArray *VT_ARRAY = nullptr;
+prime::graphics::VertexArray *GetCubeVertexArray() {
+  static prime::graphics::VertexArray *VT_ARRAY = nullptr;
 
   if (!VT_ARRAY) {
-    flatbuffers::FlatBufferBuilder builder;
-    prime::graphics::VertexArrayBuilder vtBuilder(builder);
-    vtBuilder.add_count(36);
-    vtBuilder.add_mode(GL_TRIANGLES);
-    prime::utils::FinishFlatBuffer(vtBuilder);
+    namespace pu = prime::utils;
+    pu::PlayGround vayPg;
+    pu::PlayGround::Pointer<prime::graphics::VertexArray> newVay =
+        vayPg.AddClass<prime::graphics::VertexArray>();
+
+    newVay->count = 36;
+    newVay->mode = GL_TRIANGLES;
+
     auto vayHash = pc::MakeHash<pg::VertexArray>("cube_vertex");
 
     pc::AddSimpleResource(pc::ResourceData{
         vayHash,
-        {
-            reinterpret_cast<const char *>(builder.GetBufferPointer()),
-            builder.GetSize(),
-        },
+        vayPg.Build(),
     });
     auto &data = pc::LoadResource(vayHash);
     VT_ARRAY = static_cast<prime::graphics::VertexArray *>(
@@ -38,72 +39,42 @@ struct CubeObject : MainShaderProgram {
     pg::ModelSingle *&useModel = normal ? modelNormal : modelAlbedo;
 
     if (!useModel) {
-      flatbuffers::FlatBufferBuilder builder;
+      pu::PlayGround modelPg;
 
-      auto stagesPtr = [&] {
-        std::vector<pg::StageObject> objects;
-        objects.emplace_back(JenkinsHash3_("basics/simple_cube.vert"), 0,
-                             GL_VERTEX_SHADER);
-        objects.emplace_back(
-            normal ? JenkinsHash3_("single_texture/main_normal.frag")
-                   : JenkinsHash3_("single_texture/main_albedo.frag"),
-            0, GL_FRAGMENT_SHADER);
-        return builder.CreateVectorOfStructs(objects);
-      }();
+      pu::PlayGround::Pointer<pg::ModelSingle> newModel =
+          modelPg.AddClass<pg::ModelSingle>();
 
-      auto definesPtr = [&] {
-        std::vector<flatbuffers::Offset<flatbuffers::String>> offsets;
-        offsets.emplace_back(builder.CreateString("NUM_LIGHTS=1"));
-        offsets.emplace_back(builder.CreateString("TS_TANGENT_ATTR"));
-        offsets.emplace_back(builder.CreateString("TS_QUAT"));
-        return builder.CreateVector(offsets);
-      }();
+      newModel->vertexArray = GetCubeVertexArray();
 
-      pg::ProgramBuilder pgmBuild(builder);
-      pgmBuild.add_stages(stagesPtr);
-      pgmBuild.add_program(-1);
-      pgmBuild.add_definitions(definesPtr);
-      auto pgmPtr = pgmBuild.Finish();
-      auto vtxPtr = builder.CreateStruct(GetCubeVertexArray());
+      modelPg.ArrayEmplace(newModel->program.stages,
+                           JenkinsHash3_("basics/simple_cube.vert"), 0,
+                           GL_VERTEX_SHADER);
+      modelPg.ArrayEmplace(
+          newModel->program.stages,
+          normal ? JenkinsHash3_("single_texture/main_normal.frag")
+                 : JenkinsHash3_("single_texture/main_albedo.frag"),
+          0, GL_FRAGMENT_SHADER);
 
-      auto texturesPtr = [&] {
-        std::vector<pg::SampledTexture> textures;
+      modelPg.NewString(*modelPg.ArrayEmplace(newModel->program.definitions),
+                        "NUM_LIGHTS=1");
+      modelPg.NewString(*modelPg.ArrayEmplace(newModel->program.definitions),
+                        "TS_TAGENT_ATTR");
+      modelPg.NewString(*modelPg.ArrayEmplace(newModel->program.definitions),
+                        "TS_QUAT");
 
-        textures.emplace_back(0,
-                              JenkinsHash_(normal ? "smTSNormal" : "smAlbedo"),
-                              JenkinsHash3_("res/default"), 0, 0);
+      modelPg.ArrayEmplace(newModel->textures, 0,
+                           JenkinsHash_(normal ? "smTSNormal" : "smAlbedo"),
+                           JenkinsHash3_("res/default"), 0, 0);
 
-        return builder.CreateVectorOfStructs(textures);
-      }();
-
-      auto uniBlocksPtr = [&] {
-        std::vector<pg::UniformBlock> ublocks;
-        ublocks.emplace_back(
-            pg::UniformBlock{pc::MakeHash<pg::UniformBlockData>("main_uniform"),
-                             JenkinsHash_("ubFragmentProperties"), 0, 0, 0});
-
-        return builder.CreateVectorOfStructs(ublocks);
-      }();
-
-      pg::ModelRuntime runtimeDummy{};
-      pg::ModelSingleBuilder mdlBuild(builder);
-      mdlBuild.add_program(pgmPtr);
-      mdlBuild.add_runtime(&runtimeDummy);
-      mdlBuild.add_vertexArray_type(pc::ResourceVar_ptr);
-      mdlBuild.add_vertexArray(vtxPtr.Union());
-      mdlBuild.add_textures(texturesPtr);
-      mdlBuild.add_uniformBlocks(uniBlocksPtr);
-
-      prime::utils::FinishFlatBuffer(mdlBuild);
+      modelPg.ArrayEmplace(newModel->uniformBlocks,
+                           pc::MakeHash<pg::UniformBlockData>("main_uniform"),
+                           JenkinsHash_("ubFragmentProperties"), 0, 0, 0);
 
       auto mdlHash = pc::MakeHash<pg::ModelSingle>(
           normal ? "texture_cube_normal" : "texture_cube_albedo");
       pc::AddSimpleResource(pc::ResourceData{
           mdlHash,
-          {
-              reinterpret_cast<const char *>(builder.GetBufferPointer()),
-              builder.GetSize(),
-          },
+          modelPg.Build(),
       });
       auto &mdlData = pc::LoadResource(mdlHash);
       useModel = static_cast<pg::ModelSingle *>(pc::GetResourceHandle(mdlData));
@@ -113,12 +84,10 @@ struct CubeObject : MainShaderProgram {
   }
 
   CubeObject(uint32 textureName, pg::TextureFlags flags)
-      : MainShaderProgram(
-            Model(flags == pg::TextureFlag::NormalMap)->mutable_program()),
+      : MainShaderProgram(&Model(flags == pg::TextureFlag::NormalMap)->program),
         model(Model(flags == pg::TextureFlag::NormalMap)) {
-    auto texPtr =
-        const_cast<pg::SampledTexture *>((*model->mutable_textures())[0]);
-    texPtr->mutate_texture(textureName);
+    auto &texPtr = model->textures[0];
+    texPtr.texture = textureName;
     pg::RebuildProgram(*model, pc::MakeHash<pg::ModelSingle>(
                                    flags == pg::TextureFlag::NormalMap
                                        ? "texture_cube_normal"

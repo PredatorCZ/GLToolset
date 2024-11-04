@@ -22,13 +22,10 @@
 #include "graphics/program.hpp"
 #include "graphics/sampler.hpp"
 #include "tex_format_ref.hpp"
-#include "utils/flatbuffers.hpp"
 #include "utils/instancetm_builder.hpp"
 #include "utils/resource_report.hpp"
 #include "utils/shader_preprocessor.hpp"
 #include "utils/texture.hpp"
-
-#include "texture.fbs.hpp"
 
 namespace pc = prime::common;
 namespace pu = prime::utils;
@@ -367,7 +364,7 @@ int main(int, char *argv[]) {
     if (classId == pc::GetClassHash<pg::ModelSingle>()) {
       mainObject = BuildFromModel(std::string(assInf.GetFullPathNoExt()));
       auto &modelObj = std::get<ModelObject>(mainObject);
-      lightOrbit.w = modelObj.vtArray->aabb()->bounds.w;
+      lightOrbit.w = modelObj.vtArray->aabb.bounds.w;
       lightScale = lightOrbit.w / 10;
       mainProgram = &modelObj;
       isModel = true;

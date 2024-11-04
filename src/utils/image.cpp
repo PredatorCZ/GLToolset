@@ -1,5 +1,6 @@
 #include "ispc_texcomp.h"
 #include "spike/app_context.hpp"
+#include "spike/crypto/crc32.hpp"
 #include "spike/io/binreader_stream.hpp"
 #include "spike/io/binwritter_stream.hpp"
 #include "spike/io/directory_scanner.hpp"
@@ -13,9 +14,9 @@
 #include <GL/gl.h>
 #include <GL/glext.h>
 
-#include "utils/flatbuffers.hpp"
-
-#include "texture.fbs.hpp"
+#include "graphics/detail/texture.hpp"
+#include "utils/debug.hpp"
+#include "utils/texture.hpp"
 
 MAKE_ENUM(ENUMSCOPE(class RGBAType
                     : uint8, RGBAType),
@@ -407,6 +408,26 @@ void ProcessImage(AppContext *ctx) {
   const bool isNormalMap =
       settings.normalExts.IsFiltered(ctx->workingFile.GetFilename());
   auto rawData = GetImageData(ctx->GetStream(), isNormalMap);
+  uint32 inputCrc = 0;
+  {
+    char buffer[0x4000];
+    BinReaderRef str(ctx->GetStream());
+    str.BaseStream().clear();
+    str.Seek(0);
+    const size_t strSize = str.GetSize();
+    const size_t numBlocks = strSize / sizeof(buffer);
+    const size_t restBlock = strSize % sizeof(buffer);
+
+    for (size_t i = 0; i < numBlocks; i++) {
+      str.Read(buffer);
+      inputCrc = crc32b(inputCrc, buffer, sizeof(buffer));
+    }
+
+    if (restBlock) {
+      str.ReadBuffer(buffer, restBlock);
+      inputCrc = crc32b(inputCrc, buffer, restBlock);
+    }
+  }
 
   auto CountBits = [](size_t x) {
     size_t numBits = 0;
@@ -425,9 +446,11 @@ void ProcessImage(AppContext *ctx) {
   size_t currentStream = NUM_STREAMS;
   size_t maxUsedStream = 0;
   BinWritterRef wr;
+  utils::ResourceDebugPlayground debugPg;
+  debugPg.main->inputCrc = inputCrc;
 
   auto UpdateStream = [&] {
-    const size_t minPixel = std::min(rawData.width, rawData.height);
+    const int32 minPixel = std::min(rawData.width, rawData.height);
 
     for (size_t i = 0; i < NUM_STREAMS; i++) {
       if (minPixel < settings.streamLimit[i]) {
@@ -435,7 +458,11 @@ void ProcessImage(AppContext *ctx) {
           currentStream = i;
           maxUsedStream = std::max(maxUsedStream, i);
           outFile.back() = '0' + i;
-          wr = ctx->NewFile(outFile).str;
+          NewFileContext nCtx = ctx->NewFile(outFile);
+          wr = nCtx.str;
+          AFileInfo fInf(nCtx.fullPath.data() + nCtx.delimiter);
+          debugPg.AddRef(fInf.GetFullPathNoExt(),
+                         utils::RedirectTexture({}, i).type);
         }
 
         break;
@@ -448,15 +475,18 @@ void ProcessImage(AppContext *ctx) {
   // -1 because we want minimum 4x4 mip
   int16 numMips = CountBits(std::min(rawData.width, rawData.height)) - 1;
 
-  TextureInfo meta{};
-  meta.mutate_height(rawData.height);
-  meta.mutate_width(rawData.width);
-  meta.mutate_numDims(2);
-  meta.mutate_target(currentTarget);
-  meta.mutate_maxLevel(std::max(numMips - 1, 0));
+  graphics::Texture meta{};
+  meta.height = rawData.height;
+  meta.width = rawData.width;
+  meta.numDims = 2;
+  meta.target = currentTarget;
+  meta.maxLevel = std::max(numMips - 1, 0);
 
   TextureFlags metaFlags{};
-  std::optional<TextureSwizzle> txSwizzle;
+  struct SwizzleHolder {
+    GLenum swizzle[4];
+  };
+  std::optional<SwizzleHolder> txSwizzle;
 
   auto WriteTile = [&](uint32 level) {
     UpdateStream();
@@ -472,25 +502,25 @@ void ProcessImage(AppContext *ctx) {
       metaFlags += TextureFlag::AlphaMasked;
 
       if (settings.rgbaType == RGBAType::RGBA) {
-        meta.mutate_format(GL_RGBA);
-        meta.mutate_internalFormat(GL_RGBA);
-        meta.mutate_type(GL_UNSIGNED_BYTE);
-        entry.mutate_bufferSize(rawData.rawSize);
+        meta.format = GL_RGBA;
+        meta.internalFormat = GL_RGBA;
+        meta.type = GL_UNSIGNED_BYTE;
+        entry.bufferSize = rawData.rawSize;
         wr.WriteBuffer(reinterpret_cast<char *>(rawData.data), rawData.rawSize);
       } else if (settings.rgbaType == RGBAType::BC3) {
         metaFlags += TextureFlag::Compressed;
-        meta.mutate_internalFormat(GL_COMPRESSED_RGBA_S3TC_DXT5_EXT);
-        entry.mutate_bufferSize(rawData.bcSize * 16);
+        meta.internalFormat = GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
+        entry.bufferSize = rawData.bcSize * 16;
         std::string buffer;
-        buffer.resize(entry.bufferSize());
+        buffer.resize(entry.bufferSize);
         CompressBlocksBC3(&surf, reinterpret_cast<uint8_t *>(buffer.data()));
         wr.WriteContainer(buffer);
       } else if (settings.rgbaType == RGBAType::BC7) {
         metaFlags += TextureFlag::Compressed;
-        meta.mutate_internalFormat(GL_COMPRESSED_RGBA_BPTC_UNORM);
-        entry.mutate_bufferSize(rawData.bcSize * 16);
+        meta.internalFormat = GL_COMPRESSED_RGBA_BPTC_UNORM;
+        entry.bufferSize = rawData.bcSize * 16;
         std::string buffer;
-        buffer.resize(entry.bufferSize());
+        buffer.resize(entry.bufferSize);
         bc7_enc_settings prof;
         GetProfile_alpha_basic(&prof);
         CompressBlocksBC7(&surf, reinterpret_cast<uint8_t *>(buffer.data()),
@@ -499,25 +529,25 @@ void ProcessImage(AppContext *ctx) {
       }
     } else if (rawData.origChannels == STBI_rgb) {
       if (settings.rgbType == RGBType::RGBX) {
-        meta.mutate_format(GL_RGBA);
-        meta.mutate_internalFormat(GL_RGBA);
-        meta.mutate_type(GL_UNSIGNED_BYTE);
-        entry.mutate_bufferSize(rawData.rawSize);
+        meta.format = GL_RGBA;
+        meta.internalFormat = GL_RGBA;
+        meta.type = GL_UNSIGNED_BYTE;
+        entry.bufferSize = rawData.rawSize;
         wr.WriteBuffer(reinterpret_cast<char *>(rawData.data), rawData.rawSize);
       } else if (settings.rgbType == RGBType::BC1) {
         metaFlags += TextureFlag::Compressed;
-        meta.mutate_internalFormat(GL_COMPRESSED_RGB_S3TC_DXT1_EXT);
-        entry.mutate_bufferSize(rawData.bcSize * 8);
+        meta.internalFormat = GL_COMPRESSED_RGB_S3TC_DXT1_EXT;
+        entry.bufferSize = rawData.bcSize * 8;
         std::string buffer;
-        buffer.resize(entry.bufferSize());
+        buffer.resize(entry.bufferSize);
         CompressBlocksBC1(&surf, reinterpret_cast<uint8_t *>(buffer.data()));
         wr.WriteContainer(buffer);
       } else if (settings.rgbType == RGBType::BC7) {
         metaFlags += TextureFlag::Compressed;
-        meta.mutate_internalFormat(GL_COMPRESSED_RGBA_BPTC_UNORM);
-        entry.mutate_bufferSize(rawData.bcSize * 16);
+        meta.internalFormat = GL_COMPRESSED_RGBA_BPTC_UNORM;
+        entry.bufferSize = rawData.bcSize * 16;
         std::string buffer;
-        buffer.resize(entry.bufferSize());
+        buffer.resize(entry.bufferSize);
         bc7_enc_settings prof;
         GetProfile_basic(&prof);
         CompressBlocksBC7(&surf, reinterpret_cast<uint8_t *>(buffer.data()),
@@ -526,25 +556,25 @@ void ProcessImage(AppContext *ctx) {
       }
     } else if (rawData.origChannels == STBI_grey_alpha) {
       if (settings.rgType == RGType::RG) {
-        meta.mutate_format(GL_RG);
-        meta.mutate_internalFormat(GL_RG);
-        meta.mutate_type(GL_UNSIGNED_BYTE);
-        entry.mutate_bufferSize(rawData.rawSize);
+        meta.format = GL_RG;
+        meta.internalFormat = GL_RG;
+        meta.type = GL_UNSIGNED_BYTE;
+        entry.bufferSize = rawData.rawSize;
         wr.WriteBuffer(reinterpret_cast<char *>(rawData.data), rawData.rawSize);
       } else if (settings.rgType == RGType::BC5) {
         metaFlags += TextureFlag::Compressed;
-        meta.mutate_internalFormat(GL_COMPRESSED_RG_RGTC2);
-        entry.mutate_bufferSize(rawData.bcSize * 16);
+        meta.internalFormat = GL_COMPRESSED_RG_RGTC2;
+        entry.bufferSize = rawData.bcSize * 16;
         std::string buffer;
-        buffer.resize(entry.bufferSize());
+        buffer.resize(entry.bufferSize);
         CompressBlocksBC5(&surf, reinterpret_cast<uint8_t *>(buffer.data()));
         wr.WriteContainer(buffer);
       } else if (settings.rgType == RGType::BC7) {
         metaFlags += TextureFlag::Compressed;
-        meta.mutate_internalFormat(GL_COMPRESSED_RGBA_BPTC_UNORM);
-        entry.mutate_bufferSize(rawData.bcSize * 16);
+        meta.internalFormat = GL_COMPRESSED_RGBA_BPTC_UNORM;
+        entry.bufferSize = rawData.bcSize * 16;
         std::string buffer;
-        buffer.resize(entry.bufferSize());
+        buffer.resize(entry.bufferSize);
         bc7_enc_settings prof;
         GetProfile_basic(&prof);
         CompressBlocksBC7(&surf, reinterpret_cast<uint8_t *>(buffer.data()),
@@ -553,25 +583,25 @@ void ProcessImage(AppContext *ctx) {
       }
     } else if (rawData.origChannels == STBI_grey) {
       if (settings.monochromeType == MonochromeType::Monochrome) {
-        meta.mutate_format(GL_RED);
-        meta.mutate_internalFormat(GL_RED);
-        meta.mutate_type(GL_UNSIGNED_BYTE);
-        entry.mutate_bufferSize(rawData.rawSize);
+        meta.format = GL_RED;
+        meta.internalFormat = GL_RED;
+        meta.type = GL_UNSIGNED_BYTE;
+        entry.bufferSize = rawData.rawSize;
         wr.WriteBuffer(reinterpret_cast<char *>(rawData.data), rawData.rawSize);
       } else if (settings.monochromeType == MonochromeType::BC4) {
         metaFlags += TextureFlag::Compressed;
-        meta.mutate_internalFormat(GL_COMPRESSED_RED_RGTC1);
-        entry.mutate_bufferSize(rawData.bcSize * 8);
+        meta.internalFormat = GL_COMPRESSED_RED_RGTC1;
+        entry.bufferSize = rawData.bcSize * 8;
         std::string buffer;
-        buffer.resize(entry.bufferSize());
+        buffer.resize(entry.bufferSize);
         CompressBlocksBC5(&surf, reinterpret_cast<uint8_t *>(buffer.data()));
         wr.WriteContainer(buffer);
       } else if (settings.monochromeType == MonochromeType::BC7) {
         metaFlags += TextureFlag::Compressed;
-        meta.mutate_internalFormat(GL_COMPRESSED_RGBA_BPTC_UNORM);
-        entry.mutate_bufferSize(rawData.bcSize * 16);
+        meta.internalFormat = GL_COMPRESSED_RGBA_BPTC_UNORM;
+        entry.bufferSize = rawData.bcSize * 16;
         std::string buffer;
-        buffer.resize(entry.bufferSize());
+        buffer.resize(entry.bufferSize);
         bc7_enc_settings prof;
         GetProfile_basic(&prof);
         CompressBlocksBC7(&surf, reinterpret_cast<uint8_t *>(buffer.data()),
@@ -594,21 +624,18 @@ void ProcessImage(AppContext *ctx) {
     metaFlags += TextureFlag::NormalMap;
 
     TextureEntry entry{};
-    entry.mutate_target(currentTarget);
-    entry.mutate_level(level);
-    entry.mutate_streamIndex(currentStream);
-    entry.mutate_bufferOffset(wr.Tell());
+    entry.target = currentTarget;
+    entry.level = level;
+    entry.streamIndex = currentStream;
+    entry.bufferOffset = wr.Tell();
 
     if (settings.normalType == NormalType::BC3) {
       metaFlags += TextureFlag::Compressed;
-      uint32 swMask[]{GL_RED, GL_ALPHA, GL_ONE, GL_ONE};
-      TextureSwizzle swizzle;
-      memcpy(swizzle.mutable_mask()->data(), swMask, sizeof(swMask));
-      txSwizzle.emplace(swizzle);
-      meta.mutate_internalFormat(GL_COMPRESSED_RGBA_S3TC_DXT5_EXT);
-      entry.mutate_bufferSize(rawData.bcSize * 16);
+      txSwizzle.emplace(SwizzleHolder{{GL_RED, GL_ALPHA, GL_ONE, GL_ONE}});
+      meta.internalFormat = GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
+      entry.bufferSize = rawData.bcSize * 16;
       std::string buffer;
-      buffer.resize(entry.bufferSize());
+      buffer.resize(entry.bufferSize);
 
       // Reswizzle
       const size_t stride = 4;
@@ -646,10 +673,10 @@ void ProcessImage(AppContext *ctx) {
       metaFlags += TextureFlag::Compressed;
       metaFlags -= TextureFlag::NormalDeriveZAxis;
 
-      meta.mutate_internalFormat(GL_COMPRESSED_RGBA_BPTC_UNORM);
-      entry.mutate_bufferSize(rawData.bcSize * 16);
+      meta.internalFormat = GL_COMPRESSED_RGBA_BPTC_UNORM;
+      entry.bufferSize = rawData.bcSize * 16;
       std::string buffer;
-      buffer.resize(entry.bufferSize());
+      buffer.resize(entry.bufferSize);
       bc7_enc_settings prof;
       GetProfile_basic(&prof);
       CompressBlocksBC7(&surf, reinterpret_cast<uint8_t *>(buffer.data()),
@@ -657,31 +684,31 @@ void ProcessImage(AppContext *ctx) {
       wr.WriteContainer(buffer);
     } else if (settings.normalType == NormalType::BC5) {
       metaFlags += TextureFlag::Compressed;
-      meta.mutate_internalFormat(GL_COMPRESSED_RG_RGTC2);
-      entry.mutate_bufferSize(rawData.bcSize * 16);
+      meta.internalFormat = GL_COMPRESSED_RG_RGTC2;
+      entry.bufferSize = rawData.bcSize * 16;
       std::string buffer;
-      buffer.resize(entry.bufferSize());
+      buffer.resize(entry.bufferSize);
       CompressBlocksBC5(&surf, reinterpret_cast<uint8_t *>(buffer.data()));
       wr.WriteContainer(buffer);
     } else if (settings.normalType == NormalType::BC5S) {
       metaFlags += TextureFlag::Compressed;
-      meta.mutate_internalFormat(GL_COMPRESSED_SIGNED_RG_RGTC2);
+      meta.internalFormat = GL_COMPRESSED_SIGNED_RG_RGTC2;
       metaFlags += TextureFlag::SignedNormal;
-      entry.mutate_bufferSize(rawData.bcSize * 16);
+      entry.bufferSize = rawData.bcSize * 16;
       std::string buffer;
-      buffer.resize(entry.bufferSize());
+      buffer.resize(entry.bufferSize);
       CompressBlocksBC5S(&surf, reinterpret_cast<uint8_t *>(buffer.data()));
       wr.WriteContainer(buffer);
     } else {
-      meta.mutate_format(GL_RG);
-      entry.mutate_bufferSize(rawData.rawSize);
+      meta.format = GL_RG;
+      entry.bufferSize = rawData.rawSize;
       if (settings.normalType == NormalType::RG) {
-        meta.mutate_internalFormat(GL_RG);
-        meta.mutate_type(GL_UNSIGNED_BYTE);
+        meta.internalFormat = GL_RG;
+        meta.type = GL_UNSIGNED_BYTE;
         wr.WriteBuffer(reinterpret_cast<char *>(rawData.data), rawData.rawSize);
       } else if (settings.normalType == NormalType::RGS) {
-        meta.mutate_type(GL_BYTE);
-        meta.mutate_internalFormat(GL_RG8_SNORM);
+        meta.type = GL_BYTE;
+        meta.internalFormat = GL_RG8_SNORM;
         metaFlags += TextureFlag::SignedNormal;
 
         // Convert to signed space
@@ -732,33 +759,37 @@ void ProcessImage(AppContext *ctx) {
   std::sort(entries.begin(), entries.end(),
             [](const prime::graphics::TextureEntry &i1,
                const prime::graphics::TextureEntry &i2) {
-              if (i1.streamIndex() == i2.streamIndex()) {
-                return i1.level() > i2.level();
+              if (i1.streamIndex == i2.streamIndex) {
+                return i1.level > i2.level;
               }
 
-              return i1.streamIndex() < i2.streamIndex();
+              return i1.streamIndex < i2.streamIndex;
             });
 
-  meta.mutate_flags(metaFlags);
-  meta.mutate_numStreams(maxUsedStream + 1);
+  meta.flags = metaFlags;
+  meta.numStreams = maxUsedStream + 1;
 
-  flatbuffers::FlatBufferBuilder builder(1024);
-  auto entriesPtr = builder.CreateVectorOfStructs(entries);
-  TextureBuilder texBuild(builder);
-  texBuild.add_entries(entriesPtr);
-  texBuild.add_info(&meta);
+  utils::PlayGround texturePg;
+  utils::PlayGround::Pointer<graphics::Texture> newTexture =
+      texturePg.AddClass<graphics::Texture>();
+  *newTexture = meta;
 
-  if (txSwizzle) {
-    texBuild.add_swizzle(txSwizzle.operator->());
+  for (auto &entry : entries) {
+    texturePg.ArrayEmplace(newTexture->entries, entry);
   }
 
-  prime::utils::FinishFlatBuffer(texBuild);
+  if (txSwizzle) {
+    for (auto &sw : txSwizzle->swizzle) {
+      texturePg.ArrayEmplace(newTexture->swizzle, sw);
+    }
+  }
+
+  std::string built = debugPg.Build<graphics::Texture>(texturePg);
 
   outFile = ctx->workingFile.ChangeExtension2(
       prime::common::GetClassExtension<prime::graphics::Texture>());
   BinWritterRef wrh(ctx->NewFile(outFile).str);
-  wrh.WriteBuffer(reinterpret_cast<char *>(builder.GetBufferPointer()),
-                  builder.GetSize());
+  wrh.WriteContainer(built);
 }
 
 Reflector *ProcessImageSettings() { return &Settings(); }

@@ -4,6 +4,7 @@
 #include <map>
 
 #include "spike/master_printer.hpp"
+#include "spike/io/stat.hpp"
 #include <dirent.h>
 #include <sys/inotify.h>
 #include <thread>
@@ -11,6 +12,7 @@
 namespace prime::common {
 static std::vector<std::string> workingDirs;
 static std::map<uint32, std::string> watches;
+static std::string projectFolder;
 
 std::string ResourcePath(std::string path) {
   for (auto &w : workingDirs) {
@@ -129,13 +131,7 @@ bool AddResourceHandle(uint32 hash, ResourceHandle handle) {
   return Registry().emplace(hash, handle).second;
 }
 
-void *GetResourceHandle(ResourceData &data) {
-  if (Registry().contains(data.hash.type)) {
-    return Registry().at(data.hash.type).Handle(data);
-  }
-
-  return data.buffer.data();
-}
+void *GetResourceHandle(ResourceData &data) { return data.buffer.data(); }
 
 const ResourceHandle &GetClassHandle(uint32 classHash) {
   Registry().at(classHash);
@@ -159,7 +155,7 @@ ResourceData &LoadResource(ResourceHash hash, bool reload) {
   return res.second;
 }
 
-void UnlinkResource(Resource *ptr) {
+void UnlinkResource(ResourceBase *ptr) {
   auto &foundRes = FindResource(ptr);
   foundRes.numRefs--;
 
@@ -286,4 +282,15 @@ void AddWorkingFolder(std::string path) {
   WatchTree(path);
 }
 
+void ProjectDataFolder(std::string_view path) {
+  while (path.back() == '/') {
+    path.remove_suffix(1);
+  }
+
+  projectFolder.append(path);
+  projectFolder.append("/.prime/");
+  es::mkdir(projectFolder);
+}
+
+std::string ProjectDataFolder() { return projectFolder; }
 } // namespace prime::common

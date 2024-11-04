@@ -26,3 +26,4 @@ const ProgramIntrospection &ProgramIntrospect(uint32 program);
 } // namespace prime::graphics
 
 CLASS_EXT(prime::graphics::UniformBlockData);
+HASH_CLASS(prime::graphics::Program);

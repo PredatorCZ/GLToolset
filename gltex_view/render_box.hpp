@@ -1,24 +1,25 @@
 #pragma once
-#include "model_single.fbs.hpp"
-#include "vertex.fbs.hpp"
+#include "graphics/detail/model_single.hpp"
+#include "graphics/detail/vertex_array.hpp"
+#include "utils/playground.hpp"
 
-const prime::graphics::VertexArray *GetBoxVertexArray() {
-  static const prime::graphics::VertexArray *VT_ARRAY = nullptr;
+prime::graphics::VertexArray *GetBoxVertexArray() {
+  static prime::graphics::VertexArray *VT_ARRAY = nullptr;
 
   if (!VT_ARRAY) {
-    flatbuffers::FlatBufferBuilder builder;
-    prime::graphics::VertexArrayBuilder vtBuilder(builder);
-    vtBuilder.add_count(6);
-    vtBuilder.add_mode(GL_TRIANGLES);
-    prime::utils::FinishFlatBuffer(vtBuilder);
+    namespace pu = prime::utils;
+    pu::PlayGround vayPg;
+    pu::PlayGround::Pointer<prime::graphics::VertexArray> newVay =
+        vayPg.AddClass<prime::graphics::VertexArray>();
+
+    newVay->count = 6;
+    newVay->mode = GL_TRIANGLES;
+
     auto vayHash = pc::MakeHash<pg::VertexArray>("box_vertex");
 
     pc::AddSimpleResource(pc::ResourceData{
         vayHash,
-        {
-            reinterpret_cast<const char *>(builder.GetBufferPointer()),
-            builder.GetSize(),
-        },
+        vayPg.Build(),
     });
     auto &data = pc::LoadResource(vayHash);
     VT_ARRAY = static_cast<prime::graphics::VertexArray *>(
@@ -35,72 +36,45 @@ struct BoxObject {
 
   BoxObject() {
     if (!model) {
-      flatbuffers::FlatBufferBuilder builder;
+      pu::PlayGround modelPg;
 
-      auto stagesPtr = [&] {
-        std::vector<pg::StageObject> objects;
-        objects.emplace_back(JenkinsHash3_("basics/simple_sprite.vert"), 0,
-                             GL_VERTEX_SHADER);
-        objects.emplace_back(JenkinsHash3_("light/main.frag"), 0,
-                             GL_FRAGMENT_SHADER);
-        return builder.CreateVectorOfStructs(objects);
-      }();
+      pu::PlayGround::Pointer<pg::ModelSingle> newModel =
+          modelPg.AddClass<pg::ModelSingle>();
 
-      pg::ProgramBuilder pgmBuild(builder);
-      pgmBuild.add_stages(stagesPtr);
-      pgmBuild.add_program(-1);
-      auto pgmPtr = pgmBuild.Finish();
-      auto vtxPtr = builder.CreateStruct(GetBoxVertexArray());
+      newModel->vertexArray = GetCubeVertexArray();
+
+      modelPg.ArrayEmplace(newModel->program.stages,
+                           JenkinsHash3_("basics/simple_sprite.vert"), 0,
+                           GL_VERTEX_SHADER);
+      modelPg.ArrayEmplace(newModel->program.stages,
+                           JenkinsHash3_("light/main.frag"), 0,
+                           GL_FRAGMENT_SHADER);
 
       uint32 localPosName = JenkinsHash_("localPos");
       uint32 lightColorName = JenkinsHash_("lightColor");
 
-      auto uniformsPtr = [&] {
-        std::vector<pg::UniformValue> uniforms;
-        uniforms.emplace_back(localPosName, 0, 0);
-        uniforms.emplace_back(lightColorName, 0, 0);
-        return builder.CreateVectorOfStructs(uniforms);
-      }();
+      modelPg.ArrayEmplace(newModel->uniformValues, 0, 0, localPosName);
+      modelPg.ArrayEmplace(newModel->uniformValues, 0, 0, lightColorName);
 
-      auto texturesPtr = [&] {
-        std::vector<pg::SampledTexture> textures;
-
-        textures.emplace_back(JenkinsHash3_("res/light"),
-                              JenkinsHash_("smTexture"),
-                              JenkinsHash3_("res/default"), 0, 0);
-
-        return builder.CreateVectorOfStructs(textures);
-      }();
-
-      pg::ModelRuntime runtimeDummy{};
-      pg::ModelSingleBuilder mdlBuild(builder);
-      mdlBuild.add_program(pgmPtr);
-      mdlBuild.add_runtime(&runtimeDummy);
-      mdlBuild.add_vertexArray_type(pc::ResourceVar_ptr);
-      mdlBuild.add_vertexArray(vtxPtr.Union());
-      mdlBuild.add_uniformValues(uniformsPtr);
-      mdlBuild.add_textures(texturesPtr);
-
-      prime::utils::FinishFlatBuffer(mdlBuild);
+      modelPg.ArrayEmplace(newModel->textures, JenkinsHash3_("res/light"),
+                           JenkinsHash_("smTexture"),
+                           JenkinsHash3_("res/default"), 0, 0);
 
       auto mdlHash = pc::MakeHash<pg::ModelSingle>("light_single_model");
       pc::AddSimpleResource(pc::ResourceData{
           mdlHash,
-          {
-              reinterpret_cast<const char *>(builder.GetBufferPointer()),
-              builder.GetSize(),
-          },
+          modelPg.Build(),
       });
       auto &mdlData = pc::LoadResource(mdlHash);
       model = static_cast<pg::ModelSingle *>(pc::GetResourceHandle(mdlData));
 
-      for (auto u : *model->uniformValues()) {
-        if (u->name() == localPosName) {
+      for (auto &u : model->uniformValues) {
+        if (u.name == localPosName) {
           localPos = const_cast<glm::vec4 *>(
-              reinterpret_cast<const glm::vec4 *>(u->data()));
-        } else if (u->name() == lightColorName) {
+              reinterpret_cast<const glm::vec4 *>(u.data));
+        } else if (u.name == lightColorName) {
           lightColor = const_cast<glm::vec3 *>(
-              reinterpret_cast<const glm::vec3 *>(u->data()));
+              reinterpret_cast<const glm::vec3 *>(u.data));
         }
       }
     }

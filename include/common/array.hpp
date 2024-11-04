@@ -43,3 +43,6 @@ template <class C> using LocalArray32 = LocalArray<C, int32>;
 template <class C> using LocalArray16 = LocalArray<C, int16>;
 
 } // namespace prime::common
+
+HASH_CLASS(prime::common::LocalArray16<char>);
+HASH_CLASS(prime::common::LocalArray32<char>);

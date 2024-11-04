@@ -1,5 +1,5 @@
 #pragma once
-#include "program.fbs.hpp"
+#include "graphics/detail/program.hpp"
 #include "shader_classes.hpp"
 #include <span>
 
@@ -36,8 +36,8 @@ struct MainShaderProgram {
   MainShaderProgram(prime::graphics::Program *program_) : program(program_) {
     uint32 numLights = 0;
 
-    for (auto d : *program->definitions()) {
-      std::string_view ds(d->data(), d->size());
+    for (auto &d : program->definitions) {
+      std::string_view ds(d.begin(), d.end());
 
       if (ds.starts_with("NUM_LIGHTS=")) {
         char buf[4]{};
@@ -49,10 +49,10 @@ struct MainShaderProgram {
     lightData.resize(ubLightData::BufferSize(numLights));
     lightDataSpans.FromBuffer(lightData, numLights);
 
-    lightDataSpans.pointLights[0] =
-        prime::shaders::PointLight{{1.f, 1.f, 1.f}, true, {1.f, 0.05f, 0.025f}, {}};
+    lightDataSpans.pointLights[0] = prime::shaders::PointLight{
+        {1.f, 1.f, 1.f}, true, {1.f, 0.05f, 0.025f}, {}};
 
-    auto &intro = prime::graphics::ProgramIntrospect(program->program());
+    auto &intro = prime::graphics::ProgramIntrospect(program->program);
 
     ubLightDataBind = intro.uniformBlockBinds.at("ubLightData");
 

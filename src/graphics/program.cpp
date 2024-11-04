@@ -1,9 +1,9 @@
-#include "graphics/program.hpp"
+#include "graphics/detail/program.hpp"
 #include "spike/master_printer.hpp"
 #include "utils/shader_preprocessor.hpp"
 #include <GL/glew.h>
-
-#include "program.fbs.hpp"
+#include <algorithm>
+#include <set>
 
 namespace {
 using GLShaderObject = uint32;
@@ -13,23 +13,23 @@ struct ShaderObject {
   std::vector<uint32> programs;
 };
 static std::map<uint32, GLShaderObject> shaderObjects;
-static std::map<uint32, std::set<prime::common::ResourceHash>> STAGE_REFERENCES;
+static std::map<JenHash3, std::set<prime::common::ResourceHash>> STAGE_REFERENCES;
 
 static bool CompileShader(prime::graphics::StageObject &s,
                           std::span<std::string_view> defBuffer) {
   std::string shaderSource =
-      prime::utils::PreprocessShader(s.resource(), s.type(), defBuffer);
+      prime::utils::PreprocessShader(s.resource, s.type, defBuffer);
   uint32 sourceHash = JenkinsHash_(shaderSource);
 
   if (auto found = shaderObjects.find(sourceHash);
       shaderObjects.end() != found) {
-    s.mutate_object(found->second);
+    s.object = found->second;
     return true;
   }
 
   auto data = shaderSource.c_str();
 
-  uint32 shaderId = glCreateShader(s.type());
+  uint32 shaderId = glCreateShader(s.type);
   glShaderSource(shaderId, 1, &data, nullptr);
   glCompileShader(shaderId);
 
@@ -51,7 +51,7 @@ static bool CompileShader(prime::graphics::StageObject &s,
     }
   }
 
-  s.mutate_object(shaderId);
+  s.object = shaderId;
   shaderObjects.emplace(sourceHash, shaderId);
   return false;
 }
@@ -137,14 +137,12 @@ static std::map<uint32, ProgramIntrospection> programObjects;
 const ProgramIntrospection &
 CreateProgram(Program &pgm, common::ResourceHash referee,
               std::vector<std::string> *secondaryDefs) {
-  using ProgramKey = std::array<uint32, 6>;
+  using ProgramKey = std::array<JenHash, 6>;
   static std::map<ProgramKey, uint32> stagesToProgram;
   std::vector<std::string_view> defs;
 
-  if (auto defines = pgm.definitions()) {
-    for (auto d : *defines) {
-      defs.emplace_back(d->data(), d->size());
-    }
+  for (auto &d : pgm.definitions) {
+    defs.emplace_back(d.begin(), d.end());
   }
 
   if (secondaryDefs) {
@@ -155,10 +153,9 @@ CreateProgram(Program &pgm, common::ResourceHash referee,
 
   bool fullyCached = true;
 
-  for (auto s : *pgm.stages()) {
-    STAGE_REFERENCES[s->resource()].emplace(referee);
-    bool cached = CompileShader(*const_cast<StageObject *>(s),
-                                {defs.data(), defs.size()});
+  for (auto &s : pgm.stages) {
+    STAGE_REFERENCES[s.resource].emplace(referee);
+    bool cached = CompileShader(s, {defs.data(), defs.size()});
 
     if (!cached) {
       fullyCached = false;
@@ -168,20 +165,20 @@ CreateProgram(Program &pgm, common::ResourceHash referee,
   ProgramKey key{};
   size_t i = 0;
 
-  for (auto s : *pgm.stages()) {
-    key[i++] = s->object();
+  for (auto &s : pgm.stages) {
+    key[i++] = s.object;
   }
 
   std::sort(key.begin(), key.end());
 
   if (fullyCached) {
-    pgm.mutate_program(stagesToProgram.at(key));
-    return programObjects.at(pgm.program());
+    pgm.program = stagesToProgram.at(key);
+    return programObjects.at(pgm.program);
   }
   uint32 program = glCreateProgram();
 
-  for (auto s : *pgm.stages()) {
-    glAttachShader(program, s->object());
+  for (auto &s : pgm.stages) {
+    glAttachShader(program, s.object.raw());
   }
 
   glLinkProgram(program);
@@ -209,7 +206,7 @@ CreateProgram(Program &pgm, common::ResourceHash referee,
   glGetProgramBinary(program, binSize, &binLength, &binFormat,
                      binProgram.data());
 
-  pgm.mutate_program(program);
+  pgm.program = program;
   stagesToProgram.emplace(key, program);
 
   return programObjects.emplace(program, IntrospectShader(program))
@@ -222,15 +219,12 @@ const ProgramIntrospection &ProgramIntrospect(uint32 program) {
 } // namespace prime::graphics
 
 REGISTER_CLASS(prime::graphics::UniformBlockData);
-HASH_CLASS(prime::graphics::Program);
-HASH_CLASS(prime::graphics::StageObject);
 
 template <> class prime::common::InvokeGuard<prime::graphics::StageObject> {
   static inline const bool data =
       prime::common::AddResourceHandle<graphics::StageObject>({
           .Process = nullptr,
           .Delete = nullptr,
-          .Handle = nullptr,
           .Update =
               [](ResourceHash hash) {
                 if (hash.type !=

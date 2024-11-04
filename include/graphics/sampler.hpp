@@ -7,7 +7,7 @@ struct Sampler;
 } // namespace prime::graphics
 
 HASH_CLASS(prime::graphics::SamplerProp);
-CLASS_EXT(prime::graphics::Sampler);
+CLASS_RESOURCE(1, prime::graphics::Sampler);
 
 namespace prime::graphics {
 enum class SamplerPropType : uint8 {
@@ -27,8 +27,7 @@ struct SamplerProp {
   };
 };
 
-struct Sampler : common::Resource {
-  Sampler() : CLASS_VERSION(1) {}
+struct Sampler : common::Resource<Sampler> {
   common::LocalArray16<SamplerProp> props;
 };
 

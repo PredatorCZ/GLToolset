@@ -98,7 +98,7 @@ std::string PreProcess(common::ResourceHash object, simplecpp::DUI &dui) {
   return std::move(ret).str();
 }
 
-std::string PreprocessShader(uint32 object, uint16 target,
+std::string PreprocessShader(JenHash3 object, uint16 target,
                              std::span<std::string_view> definitions) {
   const common::ResourceHash resource(common::MakeHash<char>(object));
   simplecpp::DUI dui;
@@ -138,7 +138,6 @@ template <> class prime::common::InvokeGuard<prime::utils::ShaderPreprocessor> {
       prime::common::AddResourceHandle<prime::utils::ShaderPreprocessor>({
           .Process = nullptr,
           .Delete = nullptr,
-          .Handle = nullptr,
           .Update =
               [](ResourceHash hash) {
                 if (hash.type > 0) {

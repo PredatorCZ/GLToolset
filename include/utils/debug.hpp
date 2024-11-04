@@ -1,81 +1,84 @@
+#include "common/local_pointer.hpp"
 #include "common/resource.hpp"
-#include "debug.fbs.hpp"
-#include <map>
-#include <set>
-#include <vector>
+#include "reflect.hpp"
+#include "spike/util/supercore.hpp"
+#include "utils/playground.hpp"
 
 namespace prime::utils {
+struct ResourceDebugDependency;
+struct ResourceDebug;
+struct ResourceDebugClassMember;
+struct ResourceDebugClass;
+struct ResourceDebugDataType;
+} // namespace prime::utils
+
+HASH_CLASS(prime::utils::ResourceDebug);
+HASH_CLASS(prime::utils::ResourceDebugDependency);
+HASH_CLASS(prime::utils::ResourceDebugClassMember);
+HASH_CLASS(prime::utils::ResourceDebugClass);
+HASH_CLASS(prime::utils::ResourceDebugDataType);
+
+namespace prime::utils {
+struct ResourceDebugDependency {
+  common::LocalArray32<char> path;
+  common::LocalArray32<uint32> types;
+};
+
+struct ResourceDebugDataType : reflect::DataTypeBase {
+  using reflect::DataTypeBase::operator=;
+  common::LocalVariantPointer<ResourceDebugClass> definition;
+};
+
+struct ResourceDebugClassMember {
+  common::LocalArray32<ResourceDebugDataType> types;
+  common::LocalArray32<char> name;
+  uint32 offset;
+};
+
+struct ResourceDebugClass {
+  common::LocalArray32<ResourceDebugClassMember> members;
+  common::LocalArray32<char> className;
+};
+
+struct ResourceDebugFooter {
+  static const uint32 ID = CompileFourCC("PCDR");
+  uint32 pad : 8;
+  uint32 dataSize : 24;
+  uint32 id = ID;
+};
+
 struct ResourceDebug {
-  common::ResourceHash AddRef(std::string_view path_, uint32 clHash) {
-    auto resHash = common::MakeHash<char>(path_);
-    resHash.type = clHash;
-    std::string path(path_);
+  common::LocalArray32<ResourceDebugDependency> dependencies;
+  common::LocalArray32<common::LocalArray32<char>> strings;
+  common::LocalArray32<ResourceDebugClass> classes;
+  uint32 inputCrc = 0;
+};
 
-    if (uniqueRefs.contains(path)) {
-      refTypes.emplace(resHash, uniqueRefs.at(path));
-    } else {
-      uniqueRefs.emplace(path, refs.size());
-      refTypes.emplace(resHash, refs.size());
-      refs.emplace_back(std::move(path));
-    }
+inline ResourceDebug *LocateDebug(char *data, size_t dataSize) {
+  ResourceDebugFooter *footer = reinterpret_cast<ResourceDebugFooter *>(
+      data + dataSize - sizeof(ResourceDebugFooter));
 
-    return resHash;
+  if (footer->id != ResourceDebugFooter::ID) {
+    return nullptr;
   }
 
-  std::string_view AddString(std::string_view str) {
-    strings.emplace(str);
-    return str;
-  }
+  return reinterpret_cast<ResourceDebug *>(data + footer->dataSize +
+                                           footer->pad);
+}
 
-  flatbuffers::Offset<common::DebugInfo>
-  Build(flatbuffers::FlatBufferBuilder &builder) {
-    decltype(builder.CreateVectorOfStrings({})) refsPtr;
-    flatbuffers::uoffset_t refTypesPtr;
-    flatbuffers::Offset<
-        flatbuffers::Vector<flatbuffers::Offset<prime::common::StringHash>>>
-        strsPtr;
+struct ResourceDebugPlayground : PlayGround {
+  Pointer<ResourceDebug> main;
 
-    if (!refTypes.empty()) {
-      builder.StartVector(refTypes.size(), sizeof(common::ReferenceRemap));
-      for (auto &r : refTypes) {
-        common::ReferenceRemap item{r.first.type, r.second};
-        builder.PushBytes(reinterpret_cast<uint8 *>(&item), sizeof(item));
-      }
-      refTypesPtr = builder.EndVector(refTypes.size());
-      refsPtr = builder.CreateVectorOfStrings(refs);
-    }
+  ResourceDebugPlayground();
+  common::ResourceHash AddRef(std::string_view path_, uint32 clHash);
+  std::string_view AddString(std::string_view str);
 
-    if (!strings.empty()) {
-      std::vector<flatbuffers::Offset<common::StringHash>> ptrs;
-
-      for (auto &s : strings) {
-        auto strPtr = builder.CreateString(s);
-        common::StringHashBuilder strHash(builder);
-        strHash.add_data(strPtr);
-        strHash.add_hash(JenkinsHash_(s));
-        ptrs.emplace_back(strHash.Finish());
-      }
-
-      strsPtr = builder.CreateVectorOfSortedTables(&ptrs);
-    }
-
-    common::DebugInfoBuilder debugBuilder(builder);
-    if (!refTypes.empty()) {
-      debugBuilder.add_references(refsPtr);
-      debugBuilder.add_refTypes(refTypesPtr);
-    }
-
-    if (!strings.empty()) {
-      debugBuilder.add_strings(strsPtr);
-    }
-
-    return debugBuilder.Finish();
+  template <class C> std::string Build(PlayGround &base) {
+    return Build(base, reflect::GetReflectedClass<C>());
   }
 
 private:
-  std::map<std::string, size_t> uniqueRefs;
-  std::vector<std::string> refs;
-  std::set<std::string> strings;
-  std::map<common::ResourceHash, uint32> refTypes;
+  std::string Build(PlayGround &base, const reflect::Class *refClass);
+  Pointer<ResourceDebugClass> AddDebugClass(const reflect::Class *cls);
 };
 } // namespace prime::utils

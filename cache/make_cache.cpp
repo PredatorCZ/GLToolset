@@ -121,8 +121,7 @@ struct CacheBlock {
   uint32 crc;
 };
 
-struct Cache : Resource {
-  Cache() : CLASS_VERSION(1) {}
+struct Cache : Resource<Cache> {
   LocalArray32<CacheFile> files;
   LocalArray32<CacheBlock> blocks;
 };

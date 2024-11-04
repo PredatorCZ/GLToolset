@@ -2,10 +2,6 @@
 #include "common/core.hpp"
 #include "spike/type/flags.hpp"
 
-namespace prime::common {
-union ResourceHash;
-} // namespace prime::common
-
 namespace prime::graphics {
 struct Texture;
 template <uint32 streamId> struct TextureStream;
@@ -42,3 +38,4 @@ CLASS_EXT(prime::graphics::TextureStream<0>);
 CLASS_EXT(prime::graphics::TextureStream<1>);
 CLASS_EXT(prime::graphics::TextureStream<2>);
 CLASS_EXT(prime::graphics::TextureStream<3>);
+HASH_CLASS(prime::graphics::TextureFlag);
