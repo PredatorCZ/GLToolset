@@ -1,6 +1,10 @@
 /*  see copyright notice in squirrel.h */
 #ifndef _SQUSERDATA_H_
 #define _SQUSERDATA_H_
+#include "squirrel.h"
+#include "sqstate.h"
+#include "sqvm.h"
+#include <cstddef>
 
 struct SQUserData : SQDelegable
 {

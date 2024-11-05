@@ -1,9 +1,11 @@
 /*  see copyright notice in squirrel.h */
 #ifndef _SQOBJECT_H_
 #define _SQOBJECT_H_
-
+#include "sqconfig.h"
 #include "squtils.h"
+#include "squirrel.h"
 #include <vector>
+#include <cassert>
 
 #ifdef _SQ64
 #define UINT_MINUS_ONE (0xFFFFFFFFFFFFFFFF)
@@ -89,7 +91,7 @@ struct SQRefCounted
 {
     SQUnsignedInteger _uiRef;
     struct SQWeakRef *_weakref;
-    SQRefCounted() { _uiRef = 0; _weakref = NULL; }
+    SQRefCounted() { _uiRef = 0; _weakref = nullptr; }
     virtual ~SQRefCounted();
     SQWeakRef *GetWeakRef(SQObjectType type);
     virtual void Release()=0;
@@ -209,7 +211,7 @@ struct SQObjectPtr : public SQObject
     {
         SQ_OBJECT_RAWINIT()
         _type=OT_NULL;
-        _unVal.pUserPointer=NULL;
+        _unVal.pUserPointer=nullptr;
     }
     SQObjectPtr(const SQObjectPtr &o)
     {
@@ -290,7 +292,7 @@ struct SQObjectPtr : public SQObject
         SQObjectType tOldType = _type;
         SQObjectValue unOldVal = _unVal;
         _type = OT_NULL;
-        _unVal.raw = (SQRawObjectVal)NULL;
+        _unVal.raw = (SQRawObjectVal)nullptr;
         __Release(tOldType ,unOldVal);
     }
     private:
@@ -328,7 +330,7 @@ struct SQCollectable : public SQRefCounted {
 #define ADD_TO_CHAIN(chain,obj) AddToChain(chain,obj)
 #define REMOVE_FROM_CHAIN(chain,obj) {if(!(_uiRef&MARK_FLAG))RemoveFromChain(chain,obj);}
 #define CHAINABLE_OBJ SQCollectable
-#define INIT_CHAIN() {_next=NULL;_prev=NULL;_sharedstate=ss;}
+#define INIT_CHAIN() {_next=nullptr;_prev=nullptr;_sharedstate=ss;}
 #else
 
 #define ADD_TO_CHAIN(chain,obj) ((void)0)

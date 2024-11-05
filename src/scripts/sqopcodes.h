@@ -1,6 +1,9 @@
 /*  see copyright notice in squirrel.h */
 #ifndef _SQOPCODES_H_
 #define _SQOPCODES_H_
+#include "sqconfig.h"
+#include "squtils.h"
+#include <vector>
 
 #define MAX_FUNC_STACKSIZE 0xFF
 #define MAX_LITERALS ((SQInteger)0x7FFFFFFF)
@@ -126,8 +129,6 @@ struct SQInstruction
     };
 };
 
-#include "squtils.h"
-#include <vector>
 typedef std::vector<SQInstruction> SQInstructionVec;
 
 #define NEW_SLOT_ATTRIBUTES_FLAG    0x01

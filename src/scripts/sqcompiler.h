@@ -1,8 +1,10 @@
 /*  see copyright notice in squirrel.h */
 #ifndef _SQCOMPILER_H_
 #define _SQCOMPILER_H_
+#include "squirrel.h"
 
 struct SQVM;
+struct SQObjectPtr;
 
 #define TK_IDENTIFIER   258
 #define TK_STRING_LITERAL   259

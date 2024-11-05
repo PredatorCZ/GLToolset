@@ -1,6 +1,7 @@
 /*  see copyright notice in squirrel.h */
 #ifndef _SQUTILS_H_
 #define _SQUTILS_H_
+#include "sqconfig.h"
 
 void *sq_vm_malloc(SQUnsignedInteger size);
 void *sq_vm_realloc(void *p,SQUnsignedInteger oldsize,SQUnsignedInteger size);

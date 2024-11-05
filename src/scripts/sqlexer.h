@@ -1,7 +1,9 @@
 /*  see copyright notice in squirrel.h */
 #ifndef _SQLEXER_H_
 #define _SQLEXER_H_
-
+#include "squirrel.h"
+#include "sqstate.h"
+#include "sqcompiler.h"
 #include <vector>
 
 #ifdef SQUNICODE

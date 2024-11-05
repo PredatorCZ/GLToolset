@@ -1,6 +1,8 @@
 /*  see copyright notice in squirrel.h */
 #ifndef _SQARRAY_H_
 #define _SQARRAY_H_
+#include "sqvm.h"
+#include "sqstate.h"
 
 struct SQArray : public CHAINABLE_OBJ
 {

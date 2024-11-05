@@ -1,6 +1,7 @@
 /*  see copyright notice in squirrel.h */
 #ifndef _SQCLASS_H_
 #define _SQCLASS_H_
+#include "sqtable.h"
 
 struct SQInstance;
 

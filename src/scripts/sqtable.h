@@ -8,7 +8,8 @@
 */
 
 #include "sqstring.h"
-
+#include "sqstate.h"
+#include <cstring>
 
 #define hashptr(p)  ((SQHash)(((SQInteger)p) >> 3))
 

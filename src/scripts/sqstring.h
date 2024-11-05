@@ -1,6 +1,8 @@
 /*  see copyright notice in squirrel.h */
 #ifndef _SQSTRING_H_
 #define _SQSTRING_H_
+#include "sqobject.h"
+#include <cstddef>
 
 inline SQHash _hashstr (const SQChar *s, size_t l)
 {
