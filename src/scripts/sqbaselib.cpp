@@ -6,7 +6,6 @@
 #include "sqstring.h"
 #include "sqtable.h"
 #include "sqarray.h"
-#include "sqfuncproto.h"
 #include "sqclosure.h"
 #include "sqclass.h"
 #include <stdlib.h>
@@ -237,7 +236,7 @@ static SQInteger base_compilestring(HSQUIRRELVM v)
 static SQInteger base_newthread(HSQUIRRELVM v)
 {
     SQObjectPtr &func = stack_get(v,2);
-    SQInteger stksize = (_closure(func)->_function->_stacksize << 1) +2;
+    SQInteger stksize = (_closure(func)->_function->stackSize << 1) +2;
     HSQUIRRELVM newv = sq_newthread(v, (stksize < MIN_STACK_OVERHEAD + 2)? MIN_STACK_OVERHEAD + 2 : stksize);
     sq_move(newv,v,-2);
     return 1;
@@ -654,7 +653,7 @@ static SQInteger __map_array(SQArray *dest,SQArray *src,HSQUIRRELVM v) {
 
     SQInteger nArgs = 0;
     if(sq_type(closure) == OT_CLOSURE) {
-        nArgs = _closure(closure)->_function->_nparameters;
+        nArgs = _closure(closure)->_function->parameters.numItems;
     }
     else if (sq_type(closure) == OT_NATIVECLOSURE) {
         SQInteger nParamsCheck = _nativeclosure(closure)->_nparamscheck;
@@ -792,7 +791,7 @@ static bool _sort_compare(HSQUIRRELVM v, SQArray *arr, SQObjectPtr &a,SQObjectPt
         sq_pushroottable(v);
         v->Push(a);
         v->Push(b);
-		SQObjectPtr *valptr = arr->_values._vals;
+		SQObjectPtr *valptr = arr->_values.data();
 		SQUnsignedInteger precallsize = arr->_values.size();
         if(SQ_FAILED(sq_call(v, 3, SQTrue, SQFalse))) {
             if(!sq_isstring( v->_lasterror))
@@ -803,7 +802,7 @@ static bool _sort_compare(HSQUIRRELVM v, SQArray *arr, SQObjectPtr &a,SQObjectPt
             v->Raise_Error(_SC("numeric value expected as return value of the compare function"));
             return false;
         }
-		if (precallsize != arr->_values.size() || valptr != arr->_values._vals) {
+		if (precallsize != arr->_values.size() || valptr != arr->_values.data()) {
 			v->Raise_Error(_SC("array resized during sort operation"));
 			return false;
 		}
@@ -1018,7 +1017,7 @@ static SQInteger closure_pcall(HSQUIRRELVM v)
 static SQInteger closure_call(HSQUIRRELVM v)
 {
 	SQObjectPtr &c = stack_get(v, -1);
-	if (sq_type(c) == OT_CLOSURE && (_closure(c)->_function->_bgenerator == false))
+	if (sq_type(c) == OT_CLOSURE && (_closure(c)->_function->isGenerator == false))
 	{
 		return sq_tailcall(v, sq_gettop(v) - 1);
 	}
@@ -1069,24 +1068,25 @@ static SQInteger closure_getinfos(HSQUIRRELVM v) {
     SQObject o = stack_get(v,1);
     SQTable *res = SQTable::Create(_ss(v),4);
     if(sq_type(o) == OT_CLOSURE) {
-        SQFunctionProto *f = _closure(o)->_function;
-        SQInteger nparams = f->_nparameters + (f->_varparams?1:0);
+        SQClosure *c = _closure(o);
+        prime::script::FuncProto *f = c->_function;
+        SQInteger nparams = f->parameters.numItems + (f->varParams?1:0);
         SQObjectPtr params = SQArray::Create(_ss(v),nparams);
-    SQObjectPtr defparams = SQArray::Create(_ss(v),f->_ndefaultparams);
-        for(SQInteger n = 0; n<f->_nparameters; n++) {
-            _array(params)->Set((SQInteger)n,f->_parameters[n]);
+    SQObjectPtr defparams = SQArray::Create(_ss(v),f->defaultParams.numItems);
+        for(SQInteger n = 0; n<f->parameters.numItems; n++) {
+            _array(params)->Set((SQInteger)n, f->parameters[n]);
         }
-    for(SQInteger j = 0; j<f->_ndefaultparams; j++) {
-            _array(defparams)->Set((SQInteger)j,_closure(o)->_defaultparams[j]);
+    for(SQInteger j = 0; j<f->defaultParams.numItems; j++) {
+            _array(defparams)->Set((SQInteger)j,c->_defaultparams[j]);
         }
-        if(f->_varparams) {
+        if(f->varParams) {
             _array(params)->Set(nparams-1,SQString::Create(_ss(v),_SC("..."),-1));
         }
         res->NewSlot(SQString::Create(_ss(v),_SC("native"),-1),false);
-        res->NewSlot(SQString::Create(_ss(v),_SC("name"),-1),f->_name);
-        res->NewSlot(SQString::Create(_ss(v),_SC("src"),-1),f->_sourcename);
+        res->NewSlot(SQString::Create(_ss(v),_SC("name"),-1),c->_name);
+        res->NewSlot(SQString::Create(_ss(v),_SC("src"),-1),c->_sourcename);
         res->NewSlot(SQString::Create(_ss(v),_SC("parameters"),-1),params);
-        res->NewSlot(SQString::Create(_ss(v),_SC("varargs"),-1),f->_varparams);
+        res->NewSlot(SQString::Create(_ss(v),_SC("varargs"),-1),SQInteger(f->varParams));
     res->NewSlot(SQString::Create(_ss(v),_SC("defparams"),-1),defparams);
     }
     else { //OT_NATIVECLOSURE

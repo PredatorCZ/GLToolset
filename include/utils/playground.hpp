@@ -27,7 +27,7 @@ private:
     }
 
     BtPointer &operator=(const BtPointer &) = delete;
-    BtPointer &operator=(const BtPointer &&) = delete;
+    BtPointer &operator=(BtPointer &&) = delete;
 
     ~BtPointer() { UnRegister(); }
     void Register() {
@@ -114,6 +114,13 @@ public:
     memcpy(array->begin(), value.data(), sizeof(C) * value.size());
   }
 
+  template <class C>
+  Pointer<C> NewBytes(const char *data, size_t size = sizeof(C)) {
+    Pointer<C> retVal(Allocate(size, alignof(C)));
+    memcpy(reinterpret_cast<void *>(retVal.operator->()), data, size);
+    return retVal;
+  }
+
   template <class C> void Link(common::LocalPointerBase<C> &ptrRef, C *item) {
     ptrRef = item;
     AddPointer(&ptrRef.pointer);
@@ -127,6 +134,8 @@ public:
   }
 
   std::string Build();
+
+  template <class C> C *As() { return reinterpret_cast<C *>(data.data()); }
 
 private:
   template <class C, class D>

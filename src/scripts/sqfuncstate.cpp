@@ -5,10 +5,13 @@
 #ifndef NO_COMPILER
 #include "sqcompiler.h"
 #include "sqstring.h"
-#include "sqfuncproto.h"
 #include "sqtable.h"
 #include "sqopcodes.h"
 #include "sqfuncstate.h"
+#include "sqfuncproto.h"
+
+#include "utils/playground.hpp"
+#include "script/funcproto.hpp"
 
 #ifdef _DEBUG_DUMP
 SQInstructionDesc g_InstrDesc[]={
@@ -86,7 +89,8 @@ void DumpLiteral(SQObjectPtr &o)
     }
 }
 
-SQFuncState::SQFuncState(SQSharedState *ss,SQFuncState *parent,CompilerErrorFunc efunc,void *ed)
+SQFuncState::SQFuncState(SQSharedState *ss,SQFuncState *parent,CompilerErrorFunc efunc,void *ed, prime::utils::PlayGround::Pointer<prime::script::FuncProto> nProto, SQFunctionProto *fProto)
+: curProto(nProto)
 {
         _nliterals = 0;
         _literals = SQTable::Create(ss,0);
@@ -104,7 +108,7 @@ SQFuncState::SQFuncState(SQSharedState *ss,SQFuncState *parent,CompilerErrorFunc
         _bgenerator = false;
         _outers = 0;
         _ss = ss;
-
+        funcProto = fProto;
 }
 
 void SQFuncState::Error(const SQChar *err)
@@ -589,44 +593,10 @@ SQObject SQFuncState::CreateTable()
     return nt;
 }
 
-SQFunctionProto *SQFuncState::BuildProto()
-{
-
-    SQFunctionProto *f=SQFunctionProto::Create(_ss,_instructions.size(),
-        _nliterals,_parameters.size(),_functions.size(),_outervalues.size(),
-        _lineinfos.size(),_localvarinfos.size(),_defaultparams.size());
-
-    SQObjectPtr refidx,key,val;
-    SQInteger idx;
-
-    f->_stacksize = _stacksize;
-    f->_sourcename = _sourcename;
-    f->_bgenerator = _bgenerator;
-    f->_name = _name;
-
-    while((idx=_table(_literals)->Next(false,refidx,key,val))!=-1) {
-        f->_literals[_integer(val)]=key;
-        refidx=idx;
-    }
-
-    for(SQUnsignedInteger nf = 0; nf < _functions.size(); nf++) f->_functions[nf] = _functions[nf];
-    for(SQUnsignedInteger np = 0; np < _parameters.size(); np++) f->_parameters[np] = _parameters[np];
-    for(SQUnsignedInteger no = 0; no < _outervalues.size(); no++) f->_outervalues[no] = _outervalues[no];
-    for(SQUnsignedInteger nl = 0; nl < _localvarinfos.size(); nl++) f->_localvarinfos[nl] = _localvarinfos[nl];
-    for(SQUnsignedInteger ni = 0; ni < _lineinfos.size(); ni++) f->_lineinfos[ni] = _lineinfos[ni];
-    for(SQUnsignedInteger nd = 0; nd < _defaultparams.size(); nd++) f->_defaultparams[nd] = _defaultparams[nd];
-
-    memcpy(f->_instructions,&_instructions[0],_instructions.size()*sizeof(SQInstruction));
-
-    f->_varparams = _varparams;
-
-    return f;
-}
-
 SQFuncState *SQFuncState::PushChildState(SQSharedState *ss)
 {
     SQFuncState *child = (SQFuncState *)sq_malloc(sizeof(SQFuncState));
-    new (child) SQFuncState(ss,this,_errfunc,_errtarget);
+    new (child) SQFuncState(ss,this,_errfunc,_errtarget, funcProto->playground.ArrayEmplace(curProto->functions), funcProto);
     _childstates.push_back(child);
     return child;
 }

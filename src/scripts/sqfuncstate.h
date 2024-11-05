@@ -4,8 +4,11 @@
 ///////////////////////////////////
 #include "squtils.h"
 #include "sqcompiler.h"
+#include "sqobject.h"
+#include "sqopcodes.h"
 #include <memory>
 #include <vector>
+#include "utils/playground.hpp"
 
 enum SQOuterType {
     otLOCAL = 0,
@@ -51,18 +54,17 @@ struct SQLocalVarInfo
 
 struct SQLineInfo { SQInteger _line;SQInteger _op; };
 
-namespace prime::utils {
-    struct PlayGround;
+namespace prime::script {
+    struct FuncProto;
 }
 
-typedef std::vector<std::unique_ptr<prime::utils::PlayGround>> SQFunctionVec;
 typedef std::vector<SQOuterVar> SQOuterVarVec;
 typedef std::vector<SQLocalVarInfo> SQLocalVarInfoVec;
 typedef std::vector<SQLineInfo> SQLineInfoVec;
 
 struct SQFuncState
 {
-    SQFuncState(SQSharedState *ss,SQFuncState *parent,CompilerErrorFunc efunc,void *ed);
+    SQFuncState(SQSharedState *ss,SQFuncState *parent,CompilerErrorFunc efunc,void *ed, prime::utils::PlayGround::Pointer<prime::script::FuncProto> nProto, SQFunctionProto *fProto);
     ~SQFuncState();
 #ifdef _DEBUG_DUMP
     void Dump(SQFunctionProto *func);
@@ -112,7 +114,6 @@ struct SQFuncState
     bool _bgenerator;
     SQIntVec _unresolvedbreaks;
     SQIntVec _unresolvedcontinues;
-    SQFunctionVec _functions;
     SQObjectPtrVec _parameters;
     SQOuterVarVec _outervalues;
     SQInstructionVec _instructions;
@@ -135,6 +136,10 @@ struct SQFuncState
     SQSharedState *_sharedstate;
     std::vector<SQFuncState*> _childstates;
     SQInteger GetConstant(const SQObject &cons);
+
+    SQFunctionProto *funcProto;
+    prime::utils::PlayGround::Pointer<prime::script::FuncProto> curProto;
+    uint32 numFunctions;
 private:
     CompilerErrorFunc _errfunc;
     void *_errtarget;

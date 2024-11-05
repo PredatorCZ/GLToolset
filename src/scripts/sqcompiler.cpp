@@ -7,12 +7,13 @@
 #include <setjmp.h>
 #include "sqopcodes.h"
 #include "sqstring.h"
-#include "sqfuncproto.h"
 #include "sqcompiler.h"
 #include "sqfuncstate.h"
 #include "sqlexer.h"
 #include "sqvm.h"
 #include "sqtable.h"
+#include "sqfuncproto.h"
+#include "script/funcproto.hpp"
 
 #define EXPR   1
 #define OBJECT 2
@@ -166,7 +167,8 @@ public:
         _debugline = 1;
         _debugop = 0;
 
-        SQFuncState funcstate(_ss(_vm), NULL,ThrowError,this);
+        SQFunctionProto *ptFunc = SQFunctionProto::Create(_ss(_vm));
+        SQFuncState funcstate(_ss(_vm), NULL,ThrowError,this, ptFunc->playground.AddClass<prime::script::FuncProto>(), ptFunc);
         funcstate._name = SQString::Create(_ss(_vm), _SC("main"));
         _fs = &funcstate;
         _fs->AddParameter(_fs->CreateString(_SC("this")));
@@ -184,7 +186,8 @@ public:
             _fs->AddLineInfos(_lex._currentline, _lineinfo, true);
             _fs->AddInstruction(_OP_RETURN, 0xFF);
             _fs->SetStackSize(0);
-            o =_fs->BuildProto();
+            prime::script::BuildFuncProto(_fs);
+            o = ptFunc;
 #ifdef _DEBUG_DUMP
             _fs->Dump(_funcproto(o));
 #endif
@@ -246,8 +249,8 @@ public:
             break;}
         case TK_BREAK:
             if(_fs->_breaktargets.size() <= 0)Error(_SC("'break' has to be in a loop block"));
-            if(_fs->_breaktargets.top() > 0){
-                _fs->AddInstruction(_OP_POPTRAP, _fs->_breaktargets.top(), 0);
+            if(_fs->_breaktargets.back() > 0){
+                _fs->AddInstruction(_OP_POPTRAP, _fs->_breaktargets.back(), 0);
             }
             RESOLVE_OUTERS();
             _fs->AddInstruction(_OP_JMP, 0, -1234);
@@ -256,8 +259,8 @@ public:
             break;
         case TK_CONTINUE:
             if(_fs->_continuetargets.size() <= 0)Error(_SC("'continue' has to be in a loop block"));
-            if(_fs->_continuetargets.top() > 0) {
-                _fs->AddInstruction(_OP_POPTRAP, _fs->_continuetargets.top(), 0);
+            if(_fs->_continuetargets.back() > 0) {
+                _fs->AddInstruction(_OP_POPTRAP, _fs->_continuetargets.back(), 0);
             }
             RESOLVE_OUTERS();
             _fs->AddInstruction(_OP_JMP, 0, -1234);
@@ -1002,7 +1005,7 @@ public:
                 Expect(_SC('('));
                 
                 CreateFunction(id, boundtarget);
-                _fs->AddInstruction(_OP_CLOSURE, _fs->PushTarget(), _fs->_functions.size() - 1, boundtarget);
+                _fs->AddInstruction(_OP_CLOSURE, _fs->PushTarget(), _fs->numFunctions - 1, boundtarget);
                                 }
                                 break;
             case _SC('['):
@@ -1052,7 +1055,7 @@ public:
 			}
             Expect(_SC('('));
             CreateFunction(varname,0xFF,false);
-            _fs->AddInstruction(_OP_CLOSURE, _fs->PushTarget(), _fs->_functions.size() - 1, boundtarget);
+            _fs->AddInstruction(_OP_CLOSURE, _fs->PushTarget(), _fs->numFunctions - 1, boundtarget);
             _fs->PopTarget();
             _fs->PushLocalVariable(varname);
             return;
@@ -1316,7 +1319,7 @@ public:
 		}
         Expect(_SC('('));
         CreateFunction(id, boundtarget);
-        _fs->AddInstruction(_OP_CLOSURE, _fs->PushTarget(), _fs->_functions.size() - 1, boundtarget);
+        _fs->AddInstruction(_OP_CLOSURE, _fs->PushTarget(), _fs->numFunctions - 1, boundtarget);
         EmitDerefOp(_OP_NEWSLOT);
         _fs->PopTarget();
     }
@@ -1417,8 +1420,8 @@ public:
         Lex();
         _fs->AddInstruction(_OP_PUSHTRAP,0,0);
         _fs->_traps++;
-        if(_fs->_breaktargets.size()) _fs->_breaktargets.top()++;
-        if(_fs->_continuetargets.size()) _fs->_continuetargets.top()++;
+        if(_fs->_breaktargets.size()) _fs->_breaktargets.back()++;
+        if(_fs->_continuetargets.size()) _fs->_continuetargets.back()++;
         SQInteger trappos = _fs->GetCurrentPos();
         {
             BEGIN_SCOPE();
@@ -1427,8 +1430,8 @@ public:
         }
         _fs->_traps--;
         _fs->AddInstruction(_OP_POPTRAP, 1, 0);
-        if(_fs->_breaktargets.size()) _fs->_breaktargets.top()--;
-        if(_fs->_continuetargets.size()) _fs->_continuetargets.top()--;
+        if(_fs->_breaktargets.size()) _fs->_breaktargets.back()--;
+        if(_fs->_continuetargets.size()) _fs->_continuetargets.back()--;
         _fs->AddInstruction(_OP_JMP, 0, 0);
         SQInteger jmppos = _fs->GetCurrentPos();
         _fs->SetInstructionParam(trappos, 1, (_fs->GetCurrentPos() - trappos));
@@ -1461,7 +1464,7 @@ public:
 		Expect(_SC('('));
         SQObjectPtr dummy;
         CreateFunction(dummy, boundtarget, lambda);
-        _fs->AddInstruction(_OP_CLOSURE, _fs->PushTarget(), _fs->_functions.size() - 1, boundtarget);
+        _fs->AddInstruction(_OP_CLOSURE, _fs->PushTarget(), _fs->numFunctions - 1, boundtarget);
     }
     void ClassExp()
     {
@@ -1585,12 +1588,12 @@ public:
         funcstate->AddInstruction(_OP_RETURN, -1);
         funcstate->SetStackSize(0);
 
-        SQFunctionProto *func = funcstate->BuildProto();
+        prime::script::BuildFuncProto(funcstate);
 #ifdef _DEBUG_DUMP
         funcstate->Dump(func);
 #endif
         _fs = currchunk;
-        _fs->_functions.push_back(func);
+        _fs->numFunctions++;
         _fs->PopChildState();
     }
     void ResolveBreaks(SQFuncState *funcstate, SQInteger ntoresolve)

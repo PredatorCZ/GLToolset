@@ -22,7 +22,7 @@ void sq_base_register(HSQUIRRELVM v);
 struct SQExceptionTrap{
     SQExceptionTrap() {}
     SQExceptionTrap(SQInteger ss, SQInteger stackbase,SQInstruction *ip, SQInteger ex_target){ _stacksize = ss; _stackbase = stackbase; _ip = ip; _extarget = ex_target;}
-    SQExceptionTrap(const SQExceptionTrap &et) { (*this) = et;  }
+    SQExceptionTrap(const SQExceptionTrap &et) = default;
     SQInteger _stackbase;
     SQInteger _stacksize;
     SQInstruction *_ip;
@@ -33,12 +33,17 @@ struct SQExceptionTrap{
 
 typedef std::vector<SQExceptionTrap> ExceptionsTraps;
 
+namespace prime::script {
+    struct FuncProto;
+    struct Literal;
+};
+
 struct SQVM : public CHAINABLE_OBJ
 {
     struct CallInfo{
         //CallInfo() { _generator = NULL;}
         SQInstruction *_ip;
-        SQObjectPtr *_literals;
+        prime::script::Literal *_literals;
         SQObjectPtr _closure;
         SQGenerator *_generator;
         SQInt32 _etraps;
@@ -105,7 +110,7 @@ public:
     _INLINE bool BW_OP(SQUnsignedInteger op,SQObjectPtr &trg,const SQObjectPtr &o1,const SQObjectPtr &o2);
     _INLINE bool NEG_OP(SQObjectPtr &trg,const SQObjectPtr &o1);
     _INLINE bool CMP_OP(CmpOP op, const SQObjectPtr &o1,const SQObjectPtr &o2,SQObjectPtr &res);
-    bool CLOSURE_OP(SQObjectPtr &target, SQFunctionProto *func, SQInteger boundtarget);
+    bool CLOSURE_OP(SQObjectPtr &target, prime::script::FuncProto *func, SQInteger boundtarget);
     bool CLASS_OP(SQObjectPtr &target,SQInteger name,SQInteger base,SQInteger attrs);
     //return true if the loop is finished
     bool FOREACH_OP(SQObjectPtr &o1,SQObjectPtr &o2,SQObjectPtr &o3,SQObjectPtr &o4,SQInteger arg_2,int exitpos,int &jump);

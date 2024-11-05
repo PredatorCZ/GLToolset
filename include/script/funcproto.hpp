@@ -1,38 +1,28 @@
 #pragma once
 #include "common/array.hpp"
-#include "common/pointer.hpp"
+#include "common/local_pointer.hpp"
 
-// clang-format off
-#include "sqpcheader.h"
-#include "sqvm.h"
-#include "sqstring.h"
-#include "sqarray.h"
-#include "sqtable.h"
-#include "squserdata.h"
-#include "sqopcodes.h"
-#include "sqclass.h"
-// clang-format on
+#include "sqconfig.h"
+#include "sqobject.h"
+
+struct SQVM;
+struct SQInstruction;
+struct SQFuncState;
 
 namespace prime::script {
 struct OuterVar;
 struct LocalVar;
 struct LineInfo;
-struct Object;
-
-enum ObjectType {
-  None,
-  Bool,
-  Int,
-  Float,
-  String,
-};
-}
+struct FuncProto;
+struct LiteralString;
+struct Literal;
+} // namespace prime::script
 
 HASH_CLASS(prime::script::OuterVar);
 HASH_CLASS(prime::script::LocalVar);
 HASH_CLASS(prime::script::LineInfo);
-HASH_CLASS(prime::script::ObjectType);
-HASH_CLASS(prime::script::Object);
+HASH_CLASS(prime::script::LiteralString);
+HASH_CLASS(prime::script::Literal);
 HASH_CLASS(SQInstruction);
 HASH_CLASS(SQInteger);
 CLASS_RESOURCE(1, prime::script::FuncProto);
@@ -61,20 +51,46 @@ struct LineInfo {
   uint32 line : 24;
 };
 
-struct Object {
-  ObjectType type;
+struct LiteralString : SQRefCounted {
+  static const SQInteger MIN_SIZE = sizeof(SQHash);
+  void Release() override {}
+  SQSharedState *_sharedstate = nullptr;
+  SQString *_next = nullptr; // for SharedStates string table
+  SQInteger _len;
+  SQHash _hash;
+  SQChar _val[MIN_SIZE];
+};
+
+struct InternalObject {
+  SQObjectType type;
   union {
-    SQFloat asFloat;
-    SQInteger asInt;
-    SQBool asBool;
-    common::Pointer<SQChar> asString;
+    SQRawObjectVal raw;
+    SQInteger nInteger;
+    SQFloat fFloat;
+    common::LocalPointer<LiteralString> pString{};
   };
+
+  operator SQObjectPtr() { return reinterpret_cast<SQObjectPtr &>(*this); }
+};
+
+struct Literal {
+  InternalObject asObject;
+
+  operator SQObjectPtr() {
+    if (asObject.type == OT_STRING) {
+      return reinterpret_cast<SQString *>(asObject.pString.Get());
+    }
+    return asObject;
+  }
 };
 
 struct FuncProto : common::Resource<FuncProto> {
   common::LocalArray32<char> sourceName;
   common::LocalArray32<char> name;
   bool isGenerator = false;
+  uint8 charSize = uint8(sizeof(SQChar));
+  uint8 intSize = uint8(sizeof(SQInteger));
+  uint8 floatSize = uint8(sizeof(SQFloat));
   uint32 stackSize = 0;
   uint32 varParams;
   common::LocalArray32<LocalVar> localVars;
@@ -82,13 +98,15 @@ struct FuncProto : common::Resource<FuncProto> {
   common::LocalArray32<OuterVar> outerVars;
   common::LocalArray32<SQInteger> defaultParams;
   common::LocalArray32<SQInstruction> instructions;
-  common::LocalArray32<Object> literals;
-  common::LocalArray32<Object> parameters;
+  common::LocalArray32<Literal> literals;
+  common::LocalArray32<Literal> parameters;
   common::LocalArray32<FuncProto> functions;
 
   const SQChar *GetLocal(SQVM *vm, SQUnsignedInteger stackbase,
                          SQUnsignedInteger nseq, SQUnsignedInteger nop);
   SQInteger GetLine(SQInstruction *curr);
 };
+
+void BuildFuncProto(SQFuncState *fs);
 
 } // namespace prime::script

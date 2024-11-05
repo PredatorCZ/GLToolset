@@ -5,7 +5,6 @@
 #include "sqvm.h"
 #include "sqtable.h"
 #include "sqclass.h"
-#include "sqfuncproto.h"
 #include "sqclosure.h"
 
 
@@ -21,8 +20,8 @@ SQClass::SQClass(SQSharedState *ss,SQClass *base)
     if(_base) {
         _constructoridx = _base->_constructoridx;
         _udsize = _base->_udsize;
-        _defaultvalues.copy(base->_defaultvalues);
-        _methods.copy(base->_methods);
+        _defaultvalues = base->_defaultvalues;
+        _methods = base->_methods;
         _COPY_VECTOR(_metamethods,base->_metamethods,MT_LAST);
         __ObjAddRef(_base);
     }

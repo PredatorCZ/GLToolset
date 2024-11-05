@@ -4,7 +4,6 @@
 #include "sqpcheader.h"
 #include <stdarg.h>
 #include "sqvm.h"
-#include "sqfuncproto.h"
 #include "sqclosure.h"
 #include "sqstring.h"
 
@@ -15,11 +14,11 @@ SQRESULT sq_getfunctioninfo(HSQUIRRELVM v,SQInteger level,SQFunctionInfo *fi)
         SQVM::CallInfo &ci = v->_callsstack[cssize-level-1];
         if(sq_isclosure(ci._closure)) {
             SQClosure *c = _closure(ci._closure);
-            SQFunctionProto *proto = c->_function;
+            prime::script::FuncProto *proto = c->_function;
             fi->funcid = proto;
-            fi->name = sq_type(proto->_name) == OT_STRING?_stringval(proto->_name):_SC("unknown");
-            fi->source = sq_type(proto->_sourcename) == OT_STRING?_stringval(proto->_sourcename):_SC("unknown");
-            fi->line = proto->_lineinfos[0]._line;
+            fi->name = proto->name.begin();
+            fi->source = proto->sourceName.begin();
+            fi->line = proto->lineInfos[0].line;
             return SQ_OK;
         }
     }
@@ -34,11 +33,9 @@ SQRESULT sq_stackinfos(HSQUIRRELVM v, SQInteger level, SQStackInfos *si)
         SQVM::CallInfo &ci = v->_callsstack[cssize-level-1];
         switch (sq_type(ci._closure)) {
         case OT_CLOSURE:{
-            SQFunctionProto *func = _closure(ci._closure)->_function;
-            if (sq_type(func->_name) == OT_STRING)
-                si->funcname = _stringval(func->_name);
-            if (sq_type(func->_sourcename) == OT_STRING)
-                si->source = _stringval(func->_sourcename);
+            prime::script::FuncProto *func = _closure(ci._closure)->_function;
+            si->funcname = func->name.begin();
+            si->source = func->sourceName.begin();
             si->line = func->GetLine(ci._ip);
                         }
             break;

@@ -1,35 +1,48 @@
 /*  see copyright notice in squirrel.h */
 #ifndef _SQCLOSURE_H_
 #define _SQCLOSURE_H_
+#include "sqstate.h"
+#include "script/funcproto.hpp"
+#include "sqfuncproto.h"
+#include "sqstring.h"
+#include "sqvm.h"
+
+#define _CALC_CLOSURE_SIZE(func) (sizeof(SQClosure) + (func->outerVars.numItems*sizeof(SQObjectPtr)) + (func->defaultParams.numItems*sizeof(SQObjectPtr)))
 
 
-#define _CALC_CLOSURE_SIZE(func) (sizeof(SQClosure) + (func->_noutervalues*sizeof(SQObjectPtr)) + (func->_ndefaultparams*sizeof(SQObjectPtr)))
-
-struct SQFunctionProto;
 struct SQClass;
 struct SQClosure : public CHAINABLE_OBJ
 {
 private:
-    SQClosure(SQSharedState *ss,SQFunctionProto *func){_function = func; __ObjAddRef(_function); _base = NULL; INIT_CHAIN();ADD_TO_CHAIN(&_ss(this)->_gc_chain,this); _env = NULL; _root=NULL;}
+    SQClosure(SQSharedState *ss,prime::script::FuncProto *func){_function = func; _base = NULL; INIT_CHAIN();ADD_TO_CHAIN(&_ss(this)->_gc_chain,this); _env = NULL; _root=NULL; _fproto=NULL;}
 public:
     static SQClosure *Create(SQSharedState *ss,SQFunctionProto *func,SQWeakRef *root){
-        SQInteger size = _CALC_CLOSURE_SIZE(func);
+        prime::script::FuncProto *f = *func;
+        __ObjAddRef(func);
+        SQClosure *nc = Create(ss, f, root);
+        nc->_fproto = func;
+        return nc;
+    }
+    static SQClosure *Create(SQSharedState *ss,prime::script::FuncProto *f,SQWeakRef *root){
+        SQInteger size = _CALC_CLOSURE_SIZE(f);
         SQClosure *nc=(SQClosure*)SQ_MALLOC(size);
-        new (nc) SQClosure(ss,func);
+        new (nc) SQClosure(ss,f);
         nc->_outervalues = (SQObjectPtr *)(nc + 1);
-        nc->_defaultparams = &nc->_outervalues[func->_noutervalues];
+        nc->_defaultparams = &nc->_outervalues[f->outerVars.numItems];
         nc->_root = root;
+        nc->_sourcename = SQString::Create(ss, f->sourceName.begin(), f->sourceName.numItems);
+        nc->_name = SQString::Create(ss, f->name.begin(), f->name.numItems);
          __ObjAddRef(nc->_root);
-        _CONSTRUCT_VECTOR(SQObjectPtr,func->_noutervalues,nc->_outervalues);
-        _CONSTRUCT_VECTOR(SQObjectPtr,func->_ndefaultparams,nc->_defaultparams);
+        _CONSTRUCT_VECTOR(SQObjectPtr,f->outerVars.numItems,nc->_outervalues);
+        _CONSTRUCT_VECTOR(SQObjectPtr,f->defaultParams.numItems,nc->_defaultparams);
         return nc;
     }
     void Release(){
-        SQFunctionProto *f = _function;
+        prime::script::FuncProto *f = _function;
         SQInteger size = _CALC_CLOSURE_SIZE(f);
-        _DESTRUCT_VECTOR(SQObjectPtr,f->_noutervalues,_outervalues);
-        _DESTRUCT_VECTOR(SQObjectPtr,f->_ndefaultparams,_defaultparams);
-        __ObjRelease(_function);
+        _DESTRUCT_VECTOR(SQObjectPtr,f->outerVars.numItems,_outervalues);
+        _DESTRUCT_VECTOR(SQObjectPtr,f->defaultParams.numItems,_defaultparams);
+        __ObjRelease(_fproto);
         this->~SQClosure();
         sq_vm_free(this,size);
     }
@@ -41,31 +54,32 @@ public:
     }
     SQClosure *Clone()
     {
-        SQFunctionProto *f = _function;
-        SQClosure * ret = SQClosure::Create(_opt_ss(this),f,_root);
+        prime::script::FuncProto *f = _function;
+        SQClosure * ret = SQClosure::Create(_opt_ss(this),_fproto,_root);
         ret->_env = _env;
         if(ret->_env) __ObjAddRef(ret->_env);
-        _COPY_VECTOR(ret->_outervalues,_outervalues,f->_noutervalues);
-        _COPY_VECTOR(ret->_defaultparams,_defaultparams,f->_ndefaultparams);
+        _COPY_VECTOR(ret->_outervalues,_outervalues,f->outerVars.numItems);
+        _COPY_VECTOR(ret->_defaultparams,_defaultparams,f->defaultParams.numItems);
         return ret;
     }
     ~SQClosure();
 
-    bool Save(SQVM *v,SQUserPointer up,SQWRITEFUNC write);
-    static bool Load(SQVM *v,SQUserPointer up,SQREADFUNC read,SQObjectPtr &ret);
 #ifndef NO_GARBAGE_COLLECTOR
     void Mark(SQCollectable **chain);
     void Finalize(){
-        SQFunctionProto *f = _function;
-        _NULL_SQOBJECT_VECTOR(_outervalues,f->_noutervalues);
-        _NULL_SQOBJECT_VECTOR(_defaultparams,f->_ndefaultparams);
+        prime::script::FuncProto *f = _function;
+        _NULL_SQOBJECT_VECTOR(_outervalues,f->outerVars.numItems);
+        _NULL_SQOBJECT_VECTOR(_defaultparams,f->defaultParams.numItems);
     }
     SQObjectType GetType() {return OT_CLOSURE;}
 #endif
     SQWeakRef *_env;
     SQWeakRef *_root;
     SQClass *_base;
-    SQFunctionProto *_function;
+    prime::script::FuncProto *_function;
+    SQFunctionProto *_fproto;
+    SQObjectPtr _sourcename;
+    SQObjectPtr _name;
     SQObjectPtr *_outervalues;
     SQObjectPtr *_defaultparams;
 };
@@ -166,7 +180,7 @@ public:
         if(ret->_env) __ObjAddRef(ret->_env);
         ret->_name = _name;
         _COPY_VECTOR(ret->_outervalues,_outervalues,_noutervalues);
-        ret->_typecheck.copy(_typecheck);
+        ret->_typecheck = _typecheck;
         ret->_nparamscheck = _nparamscheck;
         return ret;
     }

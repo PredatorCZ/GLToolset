@@ -6,12 +6,13 @@
 #include "sqstring.h"
 #include "sqtable.h"
 #include "sqarray.h"
-#include "sqfuncproto.h"
 #include "sqclosure.h"
 #include "squserdata.h"
 #include "sqcompiler.h"
 #include "sqfuncstate.h"
 #include "sqclass.h"
+
+namespace ps = prime::script;
 
 static bool sq_aux_gettypedarg(HSQUIRRELVM v,SQInteger idx,SQObjectType type,SQObjectPtr **o)
 {
@@ -419,9 +420,9 @@ SQRESULT sq_getclosureinfo(HSQUIRRELVM v,SQInteger idx,SQInteger *nparams,SQInte
     SQObject o = stack_get(v, idx);
     if(sq_type(o) == OT_CLOSURE) {
         SQClosure *c = _closure(o);
-        SQFunctionProto *proto = c->_function;
-        *nparams = proto->_nparameters;
-        *nfreevars = proto->_noutervalues;
+        ps::FuncProto *proto = c->_function;
+        *nparams = proto->parameters.numItems;
+        *nfreevars = proto->outerVars.numItems;
         return SQ_OK;
     }
     else if(sq_type(o) == OT_NATIVECLOSURE)
@@ -456,7 +457,7 @@ SQRESULT sq_setparamscheck(HSQUIRRELVM v,SQInteger nparamscheck,const SQChar *ty
         SQIntVec res;
         if(!CompileTypemask(res, typemask))
             return sq_throwerror(v, _SC("invalid typemask"));
-        nc->_typecheck.copy(res);
+        nc->_typecheck = res;
     }
     else {
         nc->_typecheck.resize(0);
@@ -515,7 +516,7 @@ SQRESULT sq_getclosurename(HSQUIRRELVM v,SQInteger idx)
         v->Push(_nativeclosure(o)->_name);
     }
     else { //closure
-        v->Push(_closure(o)->_function->_name);
+        v->Push(_closure(o)->_name);
     }
     return SQ_OK;
 }
@@ -1122,13 +1123,13 @@ const SQChar *sq_getlocal(HSQUIRRELVM v,SQUnsignedInteger level,SQUnsignedIntege
         if(sq_type(ci._closure)!=OT_CLOSURE)
             return NULL;
         SQClosure *c=_closure(ci._closure);
-        SQFunctionProto *func=c->_function;
-        if(func->_noutervalues > (SQInteger)idx) {
+        ps::FuncProto *func=c->_function;
+        if(func->outerVars.numItems > (SQInteger)idx) {
             v->Push(*_outer(c->_outervalues[idx])->_valptr);
-            return _stringval(func->_outervalues[idx]._name);
+            return func->outerVars[idx].name.begin();
         }
-        idx -= func->_noutervalues;
-        return func->GetLocal(v,stackbase,idx,(SQInteger)(ci._ip-func->_instructions)-1);
+        idx -= func->outerVars.numItems;
+        return func->GetLocal(v,stackbase,idx,(SQInteger)(ci._ip-func->instructions.begin())-1);
     }
     return NULL;
 }
@@ -1213,7 +1214,7 @@ SQRESULT sq_tailcall(HSQUIRRELVM v, SQInteger nparams)
 		return sq_throwerror(v, _SC("only closure can be tail called"));
 	}
 	SQClosure *clo = _closure(res);
-	if (clo->_function->_bgenerator)
+	if (clo->_function->isGenerator)
 	{
 		return sq_throwerror(v, _SC("generators cannot be tail called"));
 	}
@@ -1283,11 +1284,11 @@ SQRESULT sq_writeclosure(HSQUIRRELVM v,SQWRITEFUNC w,SQUserPointer up)
     SQObjectPtr *o = NULL;
     _GETSAFE_OBJ(v, -1, OT_CLOSURE,o);
     unsigned short tag = SQ_BYTECODE_STREAM_TAG;
-    if(_closure(*o)->_function->_noutervalues)
+    if(_closure(*o)->_function->outerVars.numItems)
         return sq_throwerror(v,_SC("a closure with free variables bound cannot be serialized"));
     if(w(up,&tag,2) != 2)
         return sq_throwerror(v,_SC("io error"));
-    if(!_closure(*o)->Save(v,up,w))
+    //if(!_closure(*o)->Save(v,up,w))
         return SQ_ERROR;
     return SQ_OK;
 }
@@ -1301,7 +1302,7 @@ SQRESULT sq_readclosure(HSQUIRRELVM v,SQREADFUNC r,SQUserPointer up)
         return sq_throwerror(v,_SC("io error"));
     if(tag != SQ_BYTECODE_STREAM_TAG)
         return sq_throwerror(v,_SC("invalid stream"));
-    if(!SQClosure::Load(v,up,r,closure))
+    //if(!SQClosure::Load(v,up,r,closure))
         return SQ_ERROR;
     v->Push(closure);
     return SQ_OK;
@@ -1349,11 +1350,11 @@ const SQChar *sq_getfreevariable(HSQUIRRELVM v,SQInteger idx,SQUnsignedInteger n
     {
     case OT_CLOSURE:{
         SQClosure *clo = _closure(self);
-        SQFunctionProto *fp = clo->_function;
-        if(((SQUnsignedInteger)fp->_noutervalues) > nval) {
+        ps::FuncProto *fp = clo->_function;
+        if(((SQUnsignedInteger)fp->outerVars.numItems) > nval) {
             v->Push(*(_outer(clo->_outervalues[nval])->_valptr));
-            SQOuterVar &ov = fp->_outervalues[nval];
-            name = _stringval(ov._name);
+            ps::OuterVar &ov = fp->outerVars[nval];
+            name = ov.name.begin();
         }
                     }
         break;
@@ -1376,8 +1377,8 @@ SQRESULT sq_setfreevariable(HSQUIRRELVM v,SQInteger idx,SQUnsignedInteger nval)
     switch(sq_type(self))
     {
     case OT_CLOSURE:{
-        SQFunctionProto *fp = _closure(self)->_function;
-        if(((SQUnsignedInteger)fp->_noutervalues) > nval){
+        ps::FuncProto *fp = _closure(self)->_function;
+        if(((SQUnsignedInteger)fp->outerVars.numItems) > nval){
             *(_outer(_closure(self)->_outervalues[nval])->_valptr) = stack_get(v,-1);
         }
         else return sq_throwerror(v,_SC("invalid free var index"));
