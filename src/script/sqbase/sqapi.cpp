@@ -11,6 +11,7 @@
 #include "sqcompiler.h"
 #include "sqfuncstate.h"
 #include "sqclass.h"
+#include "utils/debug.hpp"
 
 namespace ps = prime::script;
 
@@ -1279,31 +1280,34 @@ void sq_setcompilererrorhandler(HSQUIRRELVM v,SQCOMPILERERROR f)
     _ss(v)->_compilererrorhandler = f;
 }
 
-SQRESULT sq_writeclosure(HSQUIRRELVM v,SQWRITEFUNC w,SQUserPointer up)
+SQRESULT sq_writeclosure(HSQUIRRELVM v,SQWRITEFUNC w,SQUserPointer up, SQInteger inputCrc)
 {
     SQObjectPtr *o = NULL;
     _GETSAFE_OBJ(v, -1, OT_CLOSURE,o);
-    unsigned short tag = SQ_BYTECODE_STREAM_TAG;
     if(_closure(*o)->_function->outerVars.numItems)
         return sq_throwerror(v,_SC("a closure with free variables bound cannot be serialized"));
-    if(w(up,&tag,2) != 2)
+    prime::utils::ResourceDebugPlayground dbg;
+    std::string built = dbg.Build<ps::FuncProto>(_closure(*o)->_fproto->playground);
+    prime::utils::LocateDebug(built.data(), built.size())->inputCrc = inputCrc;
+
+    if(w(up,built.data(),built.size()) != 2)
         return sq_throwerror(v,_SC("io error"));
-    //if(!_closure(*o)->Save(v,up,w))
-        return SQ_ERROR;
     return SQ_OK;
 }
 
-SQRESULT sq_readclosure(HSQUIRRELVM v,SQREADFUNC r,SQUserPointer up)
+SQRESULT sq_readclosure(HSQUIRRELVM v,SQREADFUNC r,SQUserPointer up,SQInteger size)
 {
     SQObjectPtr closure;
+    char *data = static_cast<char *>(sq_malloc(size));
 
-    unsigned short tag;
-    if(r(up,&tag,2) != 2)
+    if(r(up,data,size) != 2)
         return sq_throwerror(v,_SC("io error"));
-    if(tag != SQ_BYTECODE_STREAM_TAG)
+    if (prime::common::GetClassHash<ps::FuncProto>() != *reinterpret_cast<uint32*>(data))
         return sq_throwerror(v,_SC("invalid stream"));
-    //if(!SQClosure::Load(v,up,r,closure))
-        return SQ_ERROR;
+
+    SQFunctionProto *proto = SQFunctionProto::Create(_ss(v));
+    proto->playground.NewBytes<ps::FuncProto>(data, size);
+    closure = SQClosure::Create(_ss(v), proto, _table(v->_roottable)->GetWeakRef(OT_TABLE));
     v->Push(closure);
     return SQ_OK;
 }

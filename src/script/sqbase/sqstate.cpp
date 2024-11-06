@@ -508,8 +508,12 @@ RefTable::RefNode *RefTable::Get(SQObject &obj,SQHash &mainpos,RefNode **prev,bo
     mainpos = ::HashObj(obj)&(_numofslots-1);
     *prev = NULL;
     for (ref = _buckets[mainpos]; ref; ) {
-        if(_rawval(ref->obj) == _rawval(obj) && sq_type(ref->obj) == sq_type(obj))
-            break;
+        if(sq_type(ref->obj) == sq_type(obj)) {
+            if (sq_type(ref->obj) == OT_STRING && _string(ref->obj)->_hash == _string(obj)->_hash)
+                break;
+            else if(_rawval(ref->obj) == _rawval(obj))
+                break;
+        }
         *prev = ref;
         ref = ref->next;
     }

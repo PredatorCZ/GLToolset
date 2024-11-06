@@ -666,7 +666,10 @@ bool SQVM::IsEqual(const SQObjectPtr &o1,const SQObjectPtr &o2,bool &res)
 		if (t1 == OT_FLOAT) {
 			res = (_float(o1) == _float(o2));
 		}
-		else {
+		else if (t1 == OT_STRING) {
+            res = (_string(o1)->_hash == _string(o2)->_hash);
+        }
+        else {
 			res = (_rawval(o1) == _rawval(o2));
 		}
     }

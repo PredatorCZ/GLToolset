@@ -38,10 +38,9 @@ public:
         return nc;
     }
     void Release(){
-        prime::script::FuncProto *f = _function;
-        SQInteger size = _CALC_CLOSURE_SIZE(f);
-        _DESTRUCT_VECTOR(SQObjectPtr,f->outerVars.numItems,_outervalues);
-        _DESTRUCT_VECTOR(SQObjectPtr,f->defaultParams.numItems,_defaultparams);
+        SQInteger size = _CALC_CLOSURE_SIZE(_function);
+        _DESTRUCT_VECTOR(SQObjectPtr,_function->outerVars.numItems,_outervalues);
+        _DESTRUCT_VECTOR(SQObjectPtr,_function->defaultParams.numItems,_defaultparams);
         __ObjRelease(_fproto);
         this->~SQClosure();
         sq_vm_free(this,size);
@@ -54,12 +53,17 @@ public:
     }
     SQClosure *Clone()
     {
-        prime::script::FuncProto *f = _function;
-        SQClosure * ret = SQClosure::Create(_opt_ss(this),_fproto,_root);
+        SQClosure * ret = nullptr;
+        if (_fproto) {
+            ret = SQClosure::Create(_opt_ss(this),_fproto,_root);
+        } else {
+            ret = SQClosure::Create(_opt_ss(this),_function,_root);
+        }
+
         ret->_env = _env;
         if(ret->_env) __ObjAddRef(ret->_env);
-        _COPY_VECTOR(ret->_outervalues,_outervalues,f->outerVars.numItems);
-        _COPY_VECTOR(ret->_defaultparams,_defaultparams,f->defaultParams.numItems);
+        _COPY_VECTOR(ret->_outervalues,_outervalues,_function->outerVars.numItems);
+        _COPY_VECTOR(ret->_defaultparams,_defaultparams,_function->defaultParams.numItems);
         return ret;
     }
     ~SQClosure();
@@ -67,9 +71,8 @@ public:
 #ifndef NO_GARBAGE_COLLECTOR
     void Mark(SQCollectable **chain);
     void Finalize(){
-        prime::script::FuncProto *f = _function;
-        _NULL_SQOBJECT_VECTOR(_outervalues,f->outerVars.numItems);
-        _NULL_SQOBJECT_VECTOR(_defaultparams,f->defaultParams.numItems);
+        _NULL_SQOBJECT_VECTOR(_outervalues,_function->outerVars.numItems);
+        _NULL_SQOBJECT_VECTOR(_defaultparams,_function->defaultParams.numItems);
     }
     SQObjectType GetType() {return OT_CLOSURE;}
 #endif

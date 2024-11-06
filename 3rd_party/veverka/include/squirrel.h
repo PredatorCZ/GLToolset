@@ -76,7 +76,6 @@ struct SQVector4;
 #define SQ_VMSTATE_SUSPENDED    2
 
 #define SQUIRREL_EOB 0
-#define SQ_BYTECODE_STREAM_TAG  0xFAFA
 
 #define SQOBJECT_REF_COUNTED    0x08000000
 #define SQOBJECT_NUMERIC        0x04000000
@@ -398,8 +397,8 @@ SQUIRREL_API SQInteger sq_collectgarbage(HSQUIRRELVM v);
 SQUIRREL_API SQRESULT sq_resurrectunreachable(HSQUIRRELVM v);
 
 /*serialization*/
-SQUIRREL_API SQRESULT sq_writeclosure(HSQUIRRELVM vm,SQWRITEFUNC writef,SQUserPointer up);
-SQUIRREL_API SQRESULT sq_readclosure(HSQUIRRELVM vm,SQREADFUNC readf,SQUserPointer up);
+SQUIRREL_API SQRESULT sq_writeclosure(HSQUIRRELVM vm,SQWRITEFUNC writef,SQUserPointer up,SQInteger inputCrc);
+SQUIRREL_API SQRESULT sq_readclosure(HSQUIRRELVM vm,SQREADFUNC readf,SQUserPointer up,SQInteger size);
 
 /*mem allocation*/
 SQUIRREL_API void *sq_malloc(SQUnsignedInteger size);

@@ -53,7 +53,7 @@ struct LineInfo {
 
 struct LiteralString : SQRefCounted {
   static const SQInteger MIN_SIZE = sizeof(SQHash);
-  void Release() override {}
+  void Release() override;
   SQSharedState *_sharedstate = nullptr;
   SQString *_next = nullptr; // for SharedStates string table
   SQInteger _len;
@@ -61,7 +61,7 @@ struct LiteralString : SQRefCounted {
   SQChar _val[MIN_SIZE];
 };
 
-struct InternalObject {
+struct Literal {
   SQObjectType type;
   union {
     SQRawObjectVal raw;
@@ -70,17 +70,11 @@ struct InternalObject {
     common::LocalPointer<LiteralString> pString{};
   };
 
-  operator SQObjectPtr() { return reinterpret_cast<SQObjectPtr &>(*this); }
-};
-
-struct Literal {
-  InternalObject asObject;
-
   operator SQObjectPtr() {
-    if (asObject.type == OT_STRING) {
-      return reinterpret_cast<SQString *>(asObject.pString.Get());
+    if (type == OT_STRING) {
+      return reinterpret_cast<SQString *>(pString.Get());
     }
-    return asObject;
+    return reinterpret_cast<SQObjectPtr &>(*this);
   }
 };
 

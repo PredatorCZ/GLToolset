@@ -1,26 +1,15 @@
 #include "script/funcproto.hpp"
-#include "sqfuncproto.h"
-#include "sqfuncstate.h"
-#include "sqtable.h"
-#include "sqvm.h"
+#include "common/resource.hpp"
+#include "sqbase/sqclosure.h"
+#include "sqbase/sqfuncproto.h"
+#include "sqbase/sqfuncstate.h"
+#include "sqbase/sqtable.h"
+#include "sqbase/sqvm.h"
 #include "utils/playground.hpp"
+#include <cstdarg>
 #include <map>
 
-#define START_MARK()                                                           \
-  if (!(_uiRef & MARK_FLAG)) {                                                 \
-    _uiRef |= MARK_FLAG;
-
-#define END_MARK()                                                             \
-  RemoveFromChain(&_sharedstate->_gc_chain, this);                             \
-  AddToChain(chain, this);                                                     \
-  }
-
-namespace prime::script {
-/*
-void FuncProto::Mark(SQCollectable **chain) {
-START_MARK()
-END_MARK()
-}*/
+using namespace prime::script;
 
 const SQChar *FuncProto::GetLocal(SQVM *vm, SQUnsignedInteger stackbase,
                                   SQUnsignedInteger nseq,
@@ -67,9 +56,12 @@ SQInteger FuncProto::GetLine(SQInstruction *curr) {
   return line;
 }
 
-void BuildFuncProto(SQFuncState *fs) {
+// force debugger to register this class
+void LiteralString::Release() {}
+
+void prime::script::BuildFuncProto(SQFuncState *fs) {
   namespace pu = prime::utils;
-  utils::PlayGround::Pointer<FuncProto> &proto = fs->curProto;
+  pu::PlayGround::Pointer<FuncProto> &proto = fs->curProto;
   pu::PlayGround &pg = *proto.owner;
   proto->isGenerator = fs->_bgenerator;
   proto->stackSize = fs->_stacksize;
@@ -130,10 +122,12 @@ void BuildFuncProto(SQFuncState *fs) {
     LiteralString *str = reinterpret_cast<LiteralString *>(buffer);
     str->_len = _string(v)->_len;
     str->_hash = _string(v)->_hash;
+    str->_uiRef = 1;
     memcpy(str->_val, _string(v)->_val, str->_len);
+    const size_t strLen = str->_len + 1;
     const size_t strSize =
-        sizeof(LiteralString) + (str->_len > LiteralString::MIN_SIZE
-                                     ? str->_len - LiteralString::MIN_SIZE
+        sizeof(LiteralString) + (strLen > LiteralString::MIN_SIZE
+                                     ? strLen - LiteralString::MIN_SIZE
                                      : 0);
     return pg.NewBytes<LiteralString>(buffer, strSize);
   };
@@ -141,22 +135,24 @@ void BuildFuncProto(SQFuncState *fs) {
   for (auto [_, v] : items) {
     if (v._type == OT_STRING) {
       pu::PlayGround::Pointer<Literal> lit = pg.ArrayEmplace(proto->literals);
+      lit->type = v._type;
       pu::PlayGround::Pointer<LiteralString> ls = NewString(v);
 
-      pg.Link(lit->asObject.pString, ls.operator->());
+      pg.Link(lit->pString, ls.operator->());
     } else {
       Literal lt;
-      lt.asObject.type = v._type;
-      lt.asObject.raw = v._unVal.raw;
+      lt.type = v._type;
+      lt.raw = v._unVal.raw;
       pg.ArrayEmplace(proto->literals, lt);
     }
   }
 
   for (uint32 i = 0; i < fs->_parameters.size(); i++) {
     pu::PlayGround::Pointer<Literal> lit = pg.ArrayEmplace(proto->parameters);
+    lit->type = OT_STRING;
     pu::PlayGround::Pointer<LiteralString> ls = NewString(fs->_parameters[i]);
 
-    pg.Link(lit->asObject.pString, ls.operator->());
+    pg.Link(lit->pString, ls.operator->());
   }
 }
 

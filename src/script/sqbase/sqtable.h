@@ -68,8 +68,13 @@ public:
     {
         _HashNode *n = &_nodes[hash];
         do{
-            if(_rawval(n->key) == _rawval(key) && sq_type(n->key) == sq_type(key)){
-                return n;
+            if(sq_type(n->key) == sq_type(key)){
+                if(sq_isstring(n->key) && _string(n->key)->_hash == _string(key)->_hash){
+                    return n;
+                }
+                else if(_rawval(n->key) == _rawval(key)){
+                    return n;
+                }
             }
         }while((n = n->next));
         return NULL;

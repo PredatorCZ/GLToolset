@@ -109,6 +109,7 @@ SQFuncState::SQFuncState(SQSharedState *ss,SQFuncState *parent,CompilerErrorFunc
         _outers = 0;
         _ss = ss;
         funcProto = fProto;
+        numFunctions = 0;
 }
 
 void SQFuncState::Error(const SQChar *err)
