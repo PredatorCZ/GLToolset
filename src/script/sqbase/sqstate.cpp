@@ -100,6 +100,7 @@ void SQSharedState::Init()
     new (_stringtable) SQStringTable(this);
     sq_new(_metamethods,SQObjectPtrVec);
     sq_new(_systemstrings,SQObjectPtrVec);
+    sq_new(_funcProtos,SQObjectPtrVec);
     sq_new(_types,SQObjectPtrVec);
     _metamethodsmap = SQTable::Create(this,MT_LAST-1);
     //adding type strings to avoid memory trashing
@@ -168,6 +169,10 @@ SQSharedState::~SQSharedState()
         _systemstrings->back().Null();
         _systemstrings->pop_back();
     }
+    while(!_funcProtos->empty()) {
+        _funcProtos->back().Null();
+        _funcProtos->pop_back();
+    }
     _thread(_root_vm)->Finalize();
     _root_vm.Null();
     _table_default_delegate.Null();
@@ -204,6 +209,7 @@ SQSharedState::~SQSharedState()
 
     sq_delete(_types,SQObjectPtrVec);
     sq_delete(_systemstrings,SQObjectPtrVec);
+    sq_delete(_funcProtos,SQObjectPtrVec);
     sq_delete(_metamethods,SQObjectPtrVec);
     sq_delete(_stringtable,SQStringTable);
     if(_scratchpad)SQ_FREE(_scratchpad,_scratchpadsize);

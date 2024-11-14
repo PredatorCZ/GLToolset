@@ -76,6 +76,7 @@ public:
     SQObjectPtrVec *_metamethods;
     SQObjectPtr _metamethodsmap;
     SQObjectPtrVec *_systemstrings;
+    SQObjectPtrVec *_funcProtos;
     SQObjectPtrVec *_types;
     SQStringTable *_stringtable;
     RefTable _refs_table;

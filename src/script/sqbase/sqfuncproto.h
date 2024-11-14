@@ -12,6 +12,7 @@ private:
     SQFunctionProto(SQSharedState *ss)
     {
         INIT_CHAIN();ADD_TO_CHAIN(&_ss(this)->_gc_chain,this);
+        ss->_funcProtos->push_back(this);
     }
 
     ~SQFunctionProto()
