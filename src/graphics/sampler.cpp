@@ -15,23 +15,20 @@ uint32 AddSampler(uint32 hash, const Sampler &sampler) {
   glSamplerParameteri(unit, GL_TEXTURE_MAX_ANISOTROPY, anisotropy);
 
   for (auto &p : sampler.props) {
-    switch (p.funcType) {
-    case SamplerPropType::Int:
-      glSamplerParameteri(unit, p.id, p.propInt);
-      break;
-    case SamplerPropType::Float:
-      glSamplerParameterf(unit, p.id, p.propFloat);
-      break;
-    case SamplerPropType::Color: {
-      Vector4 unpacked =
-          reinterpret_cast<const UCVector4 *>(p.propColor)->Convert<float>() *
-          (1.f / 0xff);
-      glSamplerParameterfv(unit, p.id, unpacked._arr);
-      break;
-    }
-    default:
-      break;
-    }
+    p.value.Visit([&](auto &value) {
+      using value_type = std::decay_t<decltype(value)>;
+      if constexpr (std::is_same_v<value_type, int32>) {
+        glSamplerParameteri(unit, p.id, value);
+      } else if constexpr (std::is_same_v<value_type, float>) {
+        glSamplerParameterf(unit, p.id, value);
+      } else {
+        Vector4 unpacked =
+            reinterpret_cast<const UCVector4 &>(value).Convert<float>() *
+            (1.f / 0xff);
+        glSamplerParameterfv(unit, p.id, unpacked._arr);
+      }
+    });
+
   }
 
   return unit;

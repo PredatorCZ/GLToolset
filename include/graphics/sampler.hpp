@@ -1,8 +1,9 @@
 #pragma once
 #include "common/array.hpp"
+#include "common/variant.hpp"
 
 namespace prime::graphics {
-struct SamplerProp;
+union SamplerProp;
 struct Sampler;
 } // namespace prime::graphics
 
@@ -10,20 +11,12 @@ HASH_CLASS(prime::graphics::SamplerProp);
 CLASS_RESOURCE(1, prime::graphics::Sampler);
 
 namespace prime::graphics {
-enum class SamplerPropType : uint8 {
-  Invalid,
-  Int,
-  Float,
-  Color,
-};
 
-struct SamplerProp {
-  uint16 id;
-  SamplerPropType funcType;
-  union {
-    int32 propInt;
-    float propFloat;
-    uint8 propColor[4];
+union SamplerProp {
+  common::Variant<int32, float, Color> value{};
+  struct {
+    uint8 pad_[6];
+    uint16 id;
   };
 };
 

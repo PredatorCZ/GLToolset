@@ -16,9 +16,7 @@ HASH_CLASS(prime::graphics::GLDrawMode);
 // clang-format off
 REFLECT(CLASS(prime::graphics::SamplerProp),
   MEMBER_CAST(id, prime::graphics::GLEnum),
-  MEMBER(propInt),
-  MEMBER(propFloat),
-  MEMBER(propColor)
+  MEMBER(value)
 );
 
 REFLECT(CLASS(prime::graphics::Sampler),

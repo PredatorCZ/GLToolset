@@ -1,5 +1,5 @@
 #pragma once
-#include "spike/util/detail/sc_architecture.hpp"
+#include "common/core.hpp"
 #include <tuple>
 
 namespace prime::reflect {
@@ -20,6 +20,8 @@ enum class Type : uint8 {
   Enum,
   ExternalResource,
   HString,
+  Variant,
+  Color,
 };
 
 enum class Container : uint8 {
@@ -52,11 +54,29 @@ struct Member {
 struct Class {
   const char *className;
   const Member *members;
+  common::ExtString extension;
+  void (*construct)(void *);
   uint32 nMembers;
+  uint32 classSize;
 
   template <class ClassType, class... C>
   Class(const ClassType *, const char *className_, C... members_)
-      : className(className_), nMembers(sizeof...(C)) {
+      : className(className_),
+        extension(common::GetClassExtension<ClassType>()),
+        construct([](void *item) {
+          if constexpr (prime::common::is_type_complete_v<ClassType>) {
+            if constexpr (std::is_default_constructible_v<ClassType>) {
+              std::construct_at(static_cast<ClassType *>(item));
+            }
+          }
+        }),
+        nMembers(sizeof...(C)), classSize([] {
+          if constexpr (prime::common::is_type_complete_v<ClassType>) {
+            return sizeof(ClassType);
+          }
+
+          return size_t(0);
+        }()) {
     if constexpr (sizeof...(C) > 0) {
       static const Member members__[]{members_...};
       members = members__;

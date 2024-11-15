@@ -6,6 +6,7 @@
 #include "common/local_pointer.hpp"
 #include "common/pointer.hpp"
 #include "common/resource.hpp"
+#include "common/variant.hpp"
 #include "spike/type/flags.hpp"
 #include "spike/type/vectors_simd.hpp"
 #include <glm/gtx/dual_quaternion.hpp>
@@ -56,6 +57,11 @@ template <class C> struct GetValueType<prime::common::LocalPointer<C>> {
   // static const Type TYPE = Type::None;
 };
 
+template <class... C> struct GetValueType<prime::common::Variant<C...>> {
+  static const Container CONTAINER = Container::None;
+  static const Type TYPE = Type::Variant;
+};
+
 template <class C> consteval DataType GetType() {
   DataType dt{};
   dt.container = GetValueType<C>::CONTAINER;
@@ -83,6 +89,8 @@ template <class C> consteval DataType GetType() {
       dt.type = Type::Vec4;
     } else if constexpr (std::is_same_v<glm::quat, C>) {
       dt.type = Type::Quat;
+    } else if constexpr (std::is_same_v<Color, C>) {
+      dt.type = Type::Color;
     } else if constexpr (std::is_same_v<glm::dualquat, C>) {
       dt.type = Type::DualQuat;
     } else if constexpr (std::is_same_v<common::ResourceHash, C> ||
@@ -90,6 +98,8 @@ template <class C> consteval DataType GetType() {
       dt.type = Type::ExternalResource;
     } else if constexpr (std::is_same_v<JenHash, C>) {
       dt.type = Type::HString;
+    } else if constexpr (GetValueType<C>::TYPE == Type::Variant) {
+      dt.type = Type::Variant;
     } else if constexpr (GetValueType<C>::TYPE == Type::Flags) {
       dt.type = Type::Flags;
       dt.hash =
@@ -103,13 +113,13 @@ template <class C> consteval DataType GetType() {
           prime::common::GetClassHash<typename GetValueType<C>::value_type>();
       static_assert(
           prime::common::GetClassHash<typename GetValueType<C>::value_type>(),
-          "Enum must be registered!");
+          "Class must be registered!");
     } else if constexpr (std::is_enum_v<C>) {
       dt.type = Type::Enum;
       static_assert(prime::common::GetClassHash<C>(),
                     "Enum must be registered!");
       dt.hash = prime::common::GetClassHash<C>();
-    } else if constexpr (std::is_class_v<C>) {
+    } else if constexpr (std::is_class_v<C> || std::is_union_v<C>) {
       dt.type = Type::Class;
       static_assert(prime::common::GetClassHash<C>(),
                     "Class must be registered!");
@@ -145,6 +155,24 @@ template <class C, size_t N> struct BuildDataTypesDetail;
 template <class C> struct BuildDataTypesDetail<C, 0> {
   using Value0 = C;
   inline static constexpr DataType TYPES[]{GetType<Value0>()};
+};
+
+template <class... C>
+struct BuildDataTypesDetail<prime::common::Variant<C...>, 0> {
+  using Value0 = prime::common::Variant<C...>;
+  inline static constexpr DataType TYPES[]{
+      DataType{
+          DataTypeBase{
+              .type = Type::Variant,
+              .container = Container::None,
+              .size = uint8(sizeof(Value0)),
+              .alignment = alignof(Value0),
+              .count = sizeof...(C),
+          },
+          0,
+      },
+      GetType<C>()...
+  };
 };
 
 template <class C> struct BuildDataTypesDetail<C, 1> {
