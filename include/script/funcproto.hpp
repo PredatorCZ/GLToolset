@@ -51,14 +51,18 @@ struct LineInfo {
   uint32 line : 24;
 };
 
+struct SQStringInfo {
+    SQInt32 _valOffset : 8 = sizeof(void*) * 3;
+    SQInt32 _len : 24;
+};
+
 struct LiteralString : SQRefCounted {
-  static const SQInteger MIN_SIZE = sizeof(SQHash);
   void Release() override;
-  SQSharedState *_sharedstate = nullptr;
-  SQString *_next = nullptr; // for SharedStates string table
-  SQInteger _len;
-  SQHash _hash;
-  SQChar _val[MIN_SIZE];
+  SQStringInfo &GetInfo() { return reinterpret_cast<SQStringInfo&>(_pad); }
+  union {
+    SQHash _hash;
+    SQChar _val[1];
+  };
 };
 
 struct Literal {

@@ -595,18 +595,32 @@ SQString *SQStringTable::Add(const SQChar *news,SQInteger len)
     SQHash h = newhash&(_numofslots-1);
     SQString *s;
     for (s = _strings[h]; s; s = s->_next){
-        if(s->_len == len && (!memcmp(news,s->_val,sq_rsl(len))))
+        if(s->Size() == len && (!memcmp(news,s->Val(),sq_rsl(len))))
             return s; //found
     }
 
-    SQString *t = (SQString *)SQ_MALLOC(sq_rsl(len)+sizeof(SQString));
-    new (t) SQString;
-    t->_sharedstate = _sharedstate;
-    memcpy(t->_val,news,sq_rsl(len));
-    t->_val[len] = _SC('\0');
-    t->_len = len;
-    t->_hash = newhash;
-    t->_next = _strings[h];
+    SQString *t = nullptr;
+
+    if (len >= sizeof(SQHash)) {
+        t = (SQString *)SQ_MALLOC(sq_rsl(len + 1)+sizeof(SQString));
+        new (t) SQString;
+        t->_sharedstate = _sharedstate;
+        t->GetInfo()._valOffset = sizeof(void*) * 3;
+        t->GetInfo()._len = len;
+        t->_hash = newhash;
+        t->_next = _strings[h];
+        memcpy(t->Val(),news,sq_rsl(len));
+        t->Val()[len] = _SC('\0');
+    } else {
+        t = (SQString *)SQ_MALLOC(sizeof(SQString));
+        new (t) SQString;
+        t->_sharedstate = _sharedstate;
+        t->_hash = newhash;
+        t->_next = _strings[h];
+        t->GetInfo()._valOffset = 0;
+        t->GetInfo()._len = len;
+    }
+
     _strings[h] = t;
     _slotused++;
     if (_slotused > _numofslots)  /* too crowded? */
@@ -645,7 +659,7 @@ void SQStringTable::Remove(SQString *bs)
             else
                 _strings[h] = s->_next;
             _slotused--;
-            SQInteger slen = s->_len;
+            SQInteger slen = s->Size();
             s->~SQString();
             SQ_FREE(s,sizeof(SQString) + sq_rsl(slen));
             return;

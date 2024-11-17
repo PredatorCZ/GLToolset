@@ -67,9 +67,9 @@ void prime::script::BuildFuncProto(SQFuncState *fs) {
   proto->stackSize = fs->_stacksize;
   proto->varParams = fs->_varparams;
   SQString *s = _string(fs->_sourcename);
-  pg.NewString(proto->sourceName, {s->_val, size_t(s->_len)});
+  pg.NewString(proto->sourceName, {s->Val(), size_t(s->Size())});
   s = _string(fs->_name);
-  pg.NewString(proto->name, {s->_val, size_t(s->_len)});
+  pg.NewString(proto->name, {s->Val(), size_t(s->Size())});
 
   for (uint32 i = 0; i < fs->_instructions.size(); i++) {
     pg.ArrayEmplace(proto->instructions, fs->_instructions[i]);
@@ -81,7 +81,7 @@ void prime::script::BuildFuncProto(SQFuncState *fs) {
     oVar->type = OuterType(var._type);
     oVar->src = int32(_integer(var._src));
     SQString *s = _string(var._name);
-    pg.NewString(oVar->name, {s->_val, size_t(s->_len)});
+    pg.NewString(oVar->name, {s->Val(), size_t(s->Size())});
   }
 
   for (uint32 i = 0; i < fs->_localvarinfos.size(); i++) {
@@ -91,7 +91,7 @@ void prime::script::BuildFuncProto(SQFuncState *fs) {
     oVar->endOp = var._end_op;
     oVar->pos = var._pos;
     SQString *s = _string(var._name);
-    pg.NewString(oVar->name, {s->_val, size_t(s->_len)});
+    pg.NewString(oVar->name, {s->Val(), size_t(s->Size())});
   }
 
   for (uint32 i = 0; i < fs->_lineinfos.size(); i++) {
@@ -120,15 +120,18 @@ void prime::script::BuildFuncProto(SQFuncState *fs) {
   auto NewString = [&pg](SQObjectPtr &v) {
     char buffer[0x1000]{};
     LiteralString *str = reinterpret_cast<LiteralString *>(buffer);
-    str->_len = _string(v)->_len;
-    str->_hash = _string(v)->_hash;
     str->_uiRef = 1;
-    memcpy(str->_val, _string(v)->_val, str->_len);
-    const size_t strLen = str->_len + 1;
-    const size_t strSize =
-        sizeof(LiteralString) + (strLen > LiteralString::MIN_SIZE
-                                     ? strLen - LiteralString::MIN_SIZE
-                                     : 0);
+    str->_hash = _string(v)->_hash;
+    str->GetInfo()._len = _string(v)->Size();
+
+    size_t strSize = sizeof(LiteralString);
+
+    if (_string(v)->GetInfo()._valOffset > 0) {
+      str->GetInfo()._valOffset = sizeof(SQHash);
+      memcpy(str->_val + sizeof(SQHash), _string(v)->Val(), _string(v)->Size());
+      strSize += _string(v)->Size() + 1;
+    }
+
     return pg.NewBytes<LiteralString>(buffer, strSize);
   };
 

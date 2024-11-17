@@ -317,7 +317,7 @@ SQRESULT sq_getclassname(HSQUIRRELVM v,const SQChar **name) {
         return SQ_ERROR;
     }
 
-    *name = _class(base)->_name->_val;
+    *name = _class(base)->_name->Val();
 
     return SQ_OK;
 }
@@ -711,7 +711,7 @@ SQRESULT sq_getstringandsize(HSQUIRRELVM v,SQInteger idx,const SQChar **c,SQInte
     SQObjectPtr *o = NULL;
     _GETSAFE_OBJ(v, idx, OT_STRING,o);
     *c = _stringval(*o);
-    *size = _string(*o)->_len;
+    *size = _string(*o)->Size();
     return SQ_OK;
 }
 
@@ -747,7 +747,7 @@ SQInteger sq_getsize(HSQUIRRELVM v, SQInteger idx)
     SQObjectPtr &o = stack_get(v, idx);
     SQObjectType type = sq_type(o);
     switch(type) {
-    case OT_STRING:     return _string(o)->_len;
+    case OT_STRING:     return _string(o)->Size();
     case OT_TABLE:      return _table(o)->CountUsed();
     case OT_ARRAY:      return _array(o)->Size();
     case OT_USERDATA:   return _userdata(o)->_size;

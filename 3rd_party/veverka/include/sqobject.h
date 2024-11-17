@@ -85,8 +85,9 @@ enum SQMetaMethod{
 
 struct SQRefCounted
 {
-    SQUnsignedInteger _uiRef;
     struct SQWeakRef *_weakref;
+    SQInt32 _uiRef;
+    SQInt32 _pad;
     SQRefCounted() { _uiRef = 0; _weakref = nullptr; }
     virtual ~SQRefCounted();
     SQWeakRef *GetWeakRef(SQObjectType type);
@@ -150,7 +151,7 @@ struct SQObjectPtr;
 #define _refcounted(obj) ((obj)._unVal.pRefCounted)
 #define _rawval(obj) ((obj)._unVal.raw)
 
-#define _stringval(obj) (obj)._unVal.pString->_val
+#define _stringval(obj) (obj)._unVal.pString->Val()
 #define _userdataval(obj) ((SQUserPointer)sq_aligning((obj)._unVal.pUserData + 1))
 
 #define tofloat(num) ((sq_type(num)==OT_INTEGER)?(SQFloat)_integer(num):_float(num))

@@ -935,7 +935,7 @@ static SQInteger string_slice(HSQUIRRELVM v)
     SQInteger sidx,eidx;
     SQObjectPtr o;
     if(SQ_FAILED(get_slice_params(v,sidx,eidx,o)))return -1;
-    SQInteger slen = _string(o)->_len;
+    SQInteger slen = _string(o)->Size();
     if(sidx < 0)sidx = slen + sidx;
     if(eidx < 0)eidx = slen + eidx;
     if(eidx < sidx) return sq_throwerror(v,_SC("wrong indexes"));
@@ -967,12 +967,12 @@ static SQInteger string_find(HSQUIRRELVM v)
     SQInteger sidx,eidx; \
     SQObjectPtr str; \
     if(SQ_FAILED(get_slice_params(v,sidx,eidx,str)))return -1; \
-    SQInteger slen = _string(str)->_len; \
+    SQInteger slen = _string(str)->Size(); \
     if(sidx < 0)sidx = slen + sidx; \
     if(eidx < 0)eidx = slen + eidx; \
     if(eidx < sidx) return sq_throwerror(v,_SC("wrong indexes")); \
     if(eidx > slen || sidx < 0) return sq_throwerror(v,_SC("slice out of range")); \
-    SQInteger len=_string(str)->_len; \
+    SQInteger len=_string(str)->Size(); \
     const SQChar *sthis=_stringval(str); \
     SQChar *snew=(_ss(v)->GetScratchPad(sq_rsl(len))); \
     memcpy(snew,sthis,sq_rsl(len));\

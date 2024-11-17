@@ -331,7 +331,7 @@ bool SQVM::StringCat(const SQObjectPtr &str,const SQObjectPtr &obj,SQObjectPtr &
     SQObjectPtr a, b;
     if(!ToString(str, a)) return false;
     if(!ToString(obj, b)) return false;
-    SQInteger l = _string(a)->_len , ol = _string(b)->_len;
+    SQInteger l = _string(a)->Size() , ol = _string(b)->Size();
     SQChar *s = _sp(sq_rsl(l + ol + 1));
     memcpy(s, _stringval(a), sq_rsl(l));
     memcpy(s + l, _stringval(b), sq_rsl(ol));
@@ -1288,7 +1288,7 @@ bool SQVM::Get(const SQObjectPtr &self, const SQObjectPtr &key, SQObjectPtr &des
     case OT_STRING:
         if(sq_isnumeric(key)){
             SQInteger n = tointeger(key);
-            SQInteger len = _string(self)->_len;
+            SQInteger len = _string(self)->Size();
             if (n < 0) { n += len; }
             if (n >= 0 && n < len) {
                 dest = SQInteger(_stringval(self)[n]);
