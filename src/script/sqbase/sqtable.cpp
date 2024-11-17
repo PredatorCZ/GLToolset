@@ -121,6 +121,7 @@ bool SQTable::NewSlot(const SQObjectPtr &key,const SQObjectPtr &val)
     _HashNode *n = _Get(key, h);
     if (n) {
         n->val = val;
+        n->key = key;
         return false;
     }
     _HashNode *mp = &_nodes[h];
