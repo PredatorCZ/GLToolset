@@ -1,4 +1,5 @@
 #pragma once
+#include "graphics/detail/vertex_array.hpp"
 #include "render_cube.hpp"
 
 struct AABBObject {
@@ -6,25 +7,7 @@ struct AABBObject {
 
   AABBObject(prime::graphics::VertexArray *vtArray) {
     if (!model) {
-      pu::PlayGround modelPg;
-
-      pu::PlayGround::Pointer<pg::ModelSingle> newModel =
-          modelPg.AddClass<pg::ModelSingle>();
-
-      newModel->vertexArray = vtArray;
-
-      modelPg.ArrayEmplace(newModel->program.stages,
-                           JenkinsHash3_("basics/simple_cube.vert"), 0,
-                           GL_VERTEX_SHADER);
-      modelPg.ArrayEmplace(newModel->program.stages,
-                           JenkinsHash3_("basics/aabb_cube.frag"), 0,
-                           GL_FRAGMENT_SHADER);
-
-      auto mdlHash = pc::MakeHash<pg::ModelSingle>("aabb_single_model");
-      pc::AddSimpleResource(pc::ResourceData{
-          mdlHash,
-          modelPg.Build(),
-      });
+      auto mdlHash = pc::MakeHash<pg::ModelSingle>("editor/aabb_single_model");
       auto &mdlData = pc::LoadResource(mdlHash);
       model = static_cast<pg::ModelSingle *>(pc::GetResourceHandle(mdlData));
     }
