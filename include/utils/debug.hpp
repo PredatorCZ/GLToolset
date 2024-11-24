@@ -1,5 +1,6 @@
 #include "common/local_pointer.hpp"
 #include "common/resource.hpp"
+#include "common/string.hpp"
 #include "reflect.hpp"
 #include "spike/util/supercore.hpp"
 #include "utils/playground.hpp"
@@ -12,7 +13,7 @@ struct ResourceDebugClass;
 struct ResourceDebugDataType;
 } // namespace prime::utils
 
-HASH_CLASS(prime::utils::ResourceDebug);
+CLASS_EXT(prime::utils::ResourceDebug);
 HASH_CLASS(prime::utils::ResourceDebugDependency);
 HASH_CLASS(prime::utils::ResourceDebugClassMember);
 HASH_CLASS(prime::utils::ResourceDebugClass);
@@ -20,7 +21,7 @@ HASH_CLASS(prime::utils::ResourceDebugDataType);
 
 namespace prime::utils {
 struct ResourceDebugDependency {
-  common::LocalArray32<char> path;
+  common::String path;
   common::LocalArray32<uint32> types;
 };
 
@@ -31,17 +32,17 @@ struct ResourceDebugDataType : reflect::DataTypeBase {
 
 struct ResourceDebugClassMember {
   common::LocalArray32<ResourceDebugDataType> types;
-  common::LocalArray32<char> name;
+  common::String name;
   uint32 offset;
 };
 
 struct ResourceDebugClass {
   common::LocalArray32<ResourceDebugClassMember> members;
-  common::LocalArray32<char> className;
+  common::String className;
 };
 
 struct ResourceDebugFooter {
-  static const uint32 ID = CompileFourCC("PCDR");
+  static const uint32 ID = common::GetClassExtension<ResourceDebug>().raw;
   uint32 pad : 8;
   uint32 dataSize : 24;
   uint32 id = ID;
@@ -49,7 +50,7 @@ struct ResourceDebugFooter {
 
 struct ResourceDebug {
   common::LocalArray32<ResourceDebugDependency> dependencies;
-  common::LocalArray32<common::LocalArray32<char>> strings;
+  common::LocalArray32<common::String> strings;
   common::LocalArray32<ResourceDebugClass> classes;
   uint32 inputCrc = 0;
 };
@@ -77,8 +78,9 @@ struct ResourceDebugPlayground : PlayGround {
     return Build(base, reflect::GetReflectedClass<C>());
   }
 
-private:
   std::string Build(PlayGround &base, const reflect::Class *refClass);
+
+private:
   Pointer<ResourceDebugClass> AddDebugClass(const reflect::Class *cls);
 };
 } // namespace prime::utils

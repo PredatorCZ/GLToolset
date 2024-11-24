@@ -16,8 +16,8 @@ SQRESULT sq_getfunctioninfo(HSQUIRRELVM v,SQInteger level,SQFunctionInfo *fi)
             SQClosure *c = _closure(ci._closure);
             prime::script::FuncProto *proto = c->_function;
             fi->funcid = proto;
-            fi->name = proto->name.begin();
-            fi->source = proto->sourceName.begin();
+            fi->name = proto->name.raw();
+            fi->source = proto->sourceName.raw();
             fi->line = proto->lineInfos[0].line;
             return SQ_OK;
         }
@@ -34,8 +34,8 @@ SQRESULT sq_stackinfos(HSQUIRRELVM v, SQInteger level, SQStackInfos *si)
         switch (sq_type(ci._closure)) {
         case OT_CLOSURE:{
             prime::script::FuncProto *func = _closure(ci._closure)->_function;
-            si->funcname = func->name.begin();
-            si->source = func->sourceName.begin();
+            si->funcname = func->name.raw();
+            si->source = func->sourceName.raw();
             si->line = func->GetLine(ci._ip);
                         }
             break;

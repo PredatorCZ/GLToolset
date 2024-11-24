@@ -18,7 +18,7 @@ const SQChar *FuncProto::GetLocal(SQVM *vm, SQUnsignedInteger stackbase,
     if (lvar.startOp <= nop && lvar.endOp >= nop) {
       if (nseq == 0) {
         vm->Push(vm->_stack[stackbase + lvar.pos]);
-        return lvar.name.begin();
+        return lvar.name.raw();
       }
       nseq--;
     }

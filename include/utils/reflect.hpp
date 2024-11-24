@@ -22,6 +22,7 @@ enum class Type : uint8 {
   HString,
   Variant,
   Color,
+  String,
 };
 
 enum class Container : uint8 {

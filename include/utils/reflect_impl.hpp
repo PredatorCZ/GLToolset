@@ -7,6 +7,7 @@
 #include "common/pointer.hpp"
 #include "common/resource.hpp"
 #include "common/variant.hpp"
+#include "common/string.hpp"
 #include "spike/type/flags.hpp"
 #include "spike/type/vectors_simd.hpp"
 #include <glm/gtx/dual_quaternion.hpp>
@@ -69,14 +70,14 @@ template <class C> consteval DataType GetType() {
   dt.alignment = alignof(C);
 
   if constexpr (GetValueType<C>::CONTAINER == Container::None) {
-    if (std::is_floating_point_v<C>) {
+    if (std::is_same_v<C, bool>) {
+      dt.type = Type::Bool;
+    } else if (std::is_floating_point_v<C>) {
       dt.type = Type::Float;
     } else if (std::is_unsigned_v<C>) {
       dt.type = Type::Uint;
     } else if (std::is_signed_v<C>) {
       dt.type = Type::Int;
-    } else if (std::is_same_v<C, bool>) {
-      dt.type = Type::Bool;
     } else if constexpr (std::is_same_v<glm::vec2, C> ||
                          std::is_same_v<Vector2, C>) {
       dt.type = Type::Vec2;
@@ -98,6 +99,8 @@ template <class C> consteval DataType GetType() {
       dt.type = Type::ExternalResource;
     } else if constexpr (std::is_same_v<JenHash, C>) {
       dt.type = Type::HString;
+    } else if constexpr (std::is_same_v<common::String, C>) {
+      dt.type = Type::String;
     } else if constexpr (GetValueType<C>::TYPE == Type::Variant) {
       dt.type = Type::Variant;
     } else if constexpr (GetValueType<C>::TYPE == Type::Flags) {

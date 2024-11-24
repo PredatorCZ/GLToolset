@@ -1127,7 +1127,7 @@ const SQChar *sq_getlocal(HSQUIRRELVM v,SQUnsignedInteger level,SQUnsignedIntege
         ps::FuncProto *func=c->_function;
         if(func->outerVars.numItems > (SQInteger)idx) {
             v->Push(*_outer(c->_outervalues[idx])->_valptr);
-            return func->outerVars[idx].name.begin();
+            return func->outerVars[idx].name.raw();
         }
         idx -= func->outerVars.numItems;
         return func->GetLocal(v,stackbase,idx,(SQInteger)(ci._ip-func->instructions.begin())-1);
@@ -1358,7 +1358,7 @@ const SQChar *sq_getfreevariable(HSQUIRRELVM v,SQInteger idx,SQUnsignedInteger n
         if(((SQUnsignedInteger)fp->outerVars.numItems) > nval) {
             v->Push(*(_outer(clo->_outervalues[nval])->_valptr));
             ps::OuterVar &ov = fp->outerVars[nval];
-            name = ov.name.begin();
+            name = ov.name.raw();
         }
                     }
         break;

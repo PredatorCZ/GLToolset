@@ -12,9 +12,7 @@ common::ResourceHash ResourceDebugPlayground::AddRef(std::string_view path_,
 
   auto found = std::find_if(
       main->dependencies.begin(), main->dependencies.end(),
-      [&](const ResourceDebugDependency &item) {
-        return path_ == std::string_view{item.path.begin(), item.path.end()};
-      });
+      [&](const ResourceDebugDependency &item) { return path_ == item.path; });
 
   if (found == main->dependencies.end()) {
     Pointer<ResourceDebugDependency> newDep(ArrayEmplace(main->dependencies));
@@ -30,12 +28,10 @@ common::ResourceHash ResourceDebugPlayground::AddRef(std::string_view path_,
 std::string_view ResourceDebugPlayground::AddString(std::string_view str) {
   auto found =
       std::find_if(main->strings.begin(), main->strings.end(),
-                   [&](const common::LocalArray32<char> &item) {
-                     return str == std::string_view{item.begin(), item.end()};
-                   });
+                   [&](const common::String &item) { return str == item; });
 
   if (found == main->strings.end()) {
-    Pointer<common::LocalArray32<char>> newDep(ArrayEmplace(main->strings));
+    Pointer<common::String> newDep(ArrayEmplace(main->strings));
     NewString(*newDep, str);
   }
   return str;
@@ -60,12 +56,11 @@ ResourceDebugPlayground::AddDebugClass(const reflect::Class *cls) {
         const reflect::Class *subCls =
             reflect::GetReflectedClass(member.types[t].hash);
 
-        auto found = std::find_if(
-            main->classes.begin(), main->classes.end(),
-            [subCls](const ResourceDebugClass &cls) {
-              return std::string_view(cls.className.begin(),
-                                      cls.className.end()) == subCls->className;
-            });
+        auto found = std::find_if(main->classes.begin(), main->classes.end(),
+                                  [subCls](const ResourceDebugClass &cls) {
+                                    return std::string_view(cls.className) ==
+                                           subCls->className;
+                                  });
 
         if (found == main->classes.end()) {
           Link(newType->definition, AddDebugClass(subCls).operator->());

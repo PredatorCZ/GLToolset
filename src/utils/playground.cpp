@@ -296,4 +296,20 @@ void PlayGround::AddPointer(int32 *ptr) {
   }
 }
 
+void PlayGround::NewString(common::String &arrayRef, std::string_view value) {
+  arrayRef.asBig.length = value.size() << 1;
+
+  if (value.size() > 7) {
+      Pointer<char> ptr = Allocate(value.size(), 1);
+      memcpy(ptr.operator->(), value.data(), value.size());
+      arrayRef.asBig.data = ptr.operator->();
+      AddPointer(&arrayRef.asBig.data.pointer);
+      return;
+    }
+
+    arrayRef.asTiny.length |= 1;
+    memcpy(arrayRef.asTiny.data , value.data(), value.size());
+}
+
+
 } // namespace prime::utils

@@ -1165,8 +1165,8 @@ void SQVM::CallDebugHook(SQInteger type,SQInteger forcedline)
     SQClosure *clos = _closure(ci->_closure);
     ps::FuncProto *func = clos->_function;
     if(_debughook_native) {
-        const SQChar *src = func->sourceName.begin();
-        const SQChar *fname = func->name.begin();
+        const SQChar *src = func->sourceName.raw();
+        const SQChar *fname = func->name.raw();
         SQInteger line = forcedline?forcedline:func->GetLine(ci->_ip);
         _debughook_native(this,type,src,line,fname);
     }

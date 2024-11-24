@@ -1,6 +1,7 @@
 #pragma once
 #include "common/array.hpp"
 #include "common/local_pointer.hpp"
+#include "common/string.hpp"
 
 #include "sqconfig.h"
 #include "sqobject.h"
@@ -35,12 +36,12 @@ enum class OuterType : uint8 {
 
 struct OuterVar {
   OuterType type;
-  common::LocalArray32<char> name;
+  common::String name;
   int32 src;
 };
 
 struct LocalVar {
-  common::LocalArray32<char> name;
+  common::String name;
   uint32 startOp;
   uint32 endOp;
   uint32 pos;
@@ -83,8 +84,8 @@ struct Literal {
 };
 
 struct FuncProto : common::Resource<FuncProto> {
-  common::LocalArray32<char> sourceName;
-  common::LocalArray32<char> name;
+  common::String sourceName;
+  common::String name;
   bool isGenerator = false;
   uint8 charSize = uint8(sizeof(SQChar));
   uint8 intSize = uint8(sizeof(SQInteger));

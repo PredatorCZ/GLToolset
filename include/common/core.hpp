@@ -42,9 +42,6 @@ template <typename T>
 constexpr bool is_type_complete_v<T, std::void_t<decltype(sizeof(T))>> = true;
 
 template <class C> constexpr uint32 GetClassHash() { return 0; }
-template <> constexpr uint32 GetClassHash<char>() {
-  return JenkinsHash_("prime::common::String");
-}
 
 struct ResourceBase {
   uint32 hash;
@@ -164,6 +161,7 @@ template <class C> class RegistryInvokeGuard;
 HASH_CLASS(uint8);
 HASH_CLASS(uint16);
 HASH_CLASS(uint32);
+HASH_CLASS(int8);
 HASH_CLASS(int16);
 HASH_CLASS(int32);
 HASH_CLASS(float);

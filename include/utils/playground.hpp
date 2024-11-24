@@ -1,6 +1,7 @@
 #pragma once
 #include "common/array.hpp"
 #include "common/local_pointer.hpp"
+#include "common/string.hpp"
 #include "spike/util/supercore.hpp"
 #include <algorithm>
 #include <cassert>
@@ -90,6 +91,16 @@ public:
     return {uint32(Relative(item, data.front())), this};
   }
 
+  template <class D>
+  Pointer<char> ArrayEmplaceBytes(common::LocalArray<char, D> &arrayRef,
+                                  uint32 size, uint32 alignment) {
+    const uint32 numItems = arrayRef.numItems + 1;
+    Pointer<common::LocalArray<char, D>> array(
+        IncArray(arrayRef, size * numItems, size, alignment));
+    char &item = (*array)[array->numItems++ * size];
+    return {uint32(Relative(item, data.front())), this};
+  }
+
   template <class C, class D, size_t N>
   void ArraySet(common::LocalArray<C, D> &arrayRef, const C (&value)[N]) {
     Pointer<common::LocalArray<C, D>> array(IncArray(arrayRef, sizeof(C) * N));
@@ -97,22 +108,12 @@ public:
     memcpy(array->begin(), value, sizeof(C) * N);
   }
 
-  template <class C, class D, size_t N>
-  void NewString(common::LocalArray<C, D> &arrayRef, const C (&value)[N]) {
-    Pointer<common::LocalArray<C, D>> array(
-        IncArray(arrayRef, sizeof(C) * (N - 1)));
-    array->numItems = N - 1;
-    memcpy(array->begin(), value, sizeof(C) * (N - 1));
+  template <size_t N>
+  void NewString(common::String &arrayRef, const char (&value)[N]) {
+    NewString(arrayRef, {value, N - 1});
   }
 
-  template <class C, class D>
-  void NewString(common::LocalArray<C, D> &arrayRef,
-                 std::basic_string_view<C> value) {
-    Pointer<common::LocalArray<C, D>> array(
-        IncArray(arrayRef, sizeof(C) * value.size()));
-    array->numItems = value.size();
-    memcpy(array->begin(), value.data(), sizeof(C) * value.size());
-  }
+  void NewString(common::String &arrayRef, std::string_view value);
 
   template <class C>
   Pointer<C> NewBytes(const char *data, size_t size = sizeof(C)) {
@@ -139,17 +140,18 @@ public:
 
 private:
   template <class C, class D>
-  Pointer<common::LocalArray<C, D>> IncArray(common::LocalArray<C, D> &arrayRef,
-                                             uint32 sizeOverride = 0) {
+  Pointer<common::LocalArray<C, D>>
+  IncArray(common::LocalArray<C, D> &arrayRef, uint32 sizeOverride = 0,
+           uint32 stride = sizeof(C), uint32 align = alignof(C)) {
     Pointer<common::LocalArray<C, D>> array(Relative(arrayRef, data.front()),
                                             this);
     const uint32 numItems = arrayRef.numItems;
     const uint32 newSize =
-        sizeOverride ? sizeOverride : (numItems + 1) * sizeof(C);
+        sizeOverride ? sizeOverride : (numItems + 1) * stride;
 
     Pointer<C> ptr(numItems ? Realloc(Relative(*array->begin(), data.front()),
-                                      newSize, alignof(C))
-                            : Allocate(newSize, alignof(C)));
+                                      newSize, align)
+                            : Allocate(newSize, align));
 
     if (numItems == 0) {
       using ArrayType = common::LocalArray<C, D>;

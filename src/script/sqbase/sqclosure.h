@@ -30,8 +30,10 @@ public:
         nc->_outervalues = (SQObjectPtr *)(nc + 1);
         nc->_defaultparams = &nc->_outervalues[f->outerVars.numItems];
         nc->_root = root;
-        nc->_sourcename = SQString::Create(ss, f->sourceName.begin(), f->sourceName.numItems);
-        nc->_name = SQString::Create(ss, f->name.begin(), f->name.numItems);
+        std::string_view srcName(f->sourceName);
+        std::string_view cloName(f->name);
+        nc->_sourcename = SQString::Create(ss, srcName.data(), srcName.size());
+        nc->_name = SQString::Create(ss, cloName.data(), cloName.size());
          __ObjAddRef(nc->_root);
         _CONSTRUCT_VECTOR(SQObjectPtr,f->outerVars.numItems,nc->_outervalues);
         _CONSTRUCT_VECTOR(SQObjectPtr,f->defaultParams.numItems,nc->_defaultparams);
