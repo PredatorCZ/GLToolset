@@ -135,14 +135,15 @@ namespace prime::graphics {
 static std::map<uint32, ProgramIntrospection> programObjects;
 
 const ProgramIntrospection &
-CreateProgram(Program &pgm, common::ResourceHash referee,
+CreateProgram(Program &prog, common::ResourceHash referee,
               std::vector<std::string> *secondaryDefs) {
   using ProgramKey = std::array<JenHash, 6>;
   static std::map<ProgramKey, uint32> stagesToProgram;
   std::vector<std::string_view> defs;
+  LegacyProgram &pgm = prog.proto.Get<LegacyProgram>();
 
   for (auto &d : pgm.definitions) {
-    defs.emplace_back(d.begin(), d.end());
+    defs.emplace_back(d);
   }
 
   if (secondaryDefs) {
@@ -172,8 +173,8 @@ CreateProgram(Program &pgm, common::ResourceHash referee,
   std::sort(key.begin(), key.end());
 
   if (fullyCached) {
-    pgm.program = stagesToProgram.at(key);
-    return programObjects.at(pgm.program);
+    prog.program = stagesToProgram.at(key);
+    return programObjects.at(prog.program);
   }
   uint32 program = glCreateProgram();
 
@@ -206,7 +207,7 @@ CreateProgram(Program &pgm, common::ResourceHash referee,
   glGetProgramBinary(program, binSize, &binLength, &binFormat,
                      binProgram.data());
 
-  pgm.program = program;
+  prog.program = program;
   stagesToProgram.emplace(key, program);
 
   return programObjects.emplace(program, IntrospectShader(program))

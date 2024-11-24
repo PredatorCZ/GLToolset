@@ -678,6 +678,8 @@ void ProcessMD2(AppContext *ctx) {
     pu::PlayGround modelPg;
     pu::PlayGround::Pointer<pg::ModelSingle> model(
         modelPg.AddClass<pg::ModelSingle>());
+    model->program.proto = pg::LegacyProgram{};
+    model->vertexArray = vayHash;
 
     AFileInfo textureFile(hdr.skins->path);
     AFileInfo newBranch(textureFile.CatchBranch(outFile));
@@ -712,8 +714,7 @@ void ProcessMD2(AppContext *ctx) {
           TextureSlot{texHash.name, debugPg.AddString("smNormal")});
 
       pu::PlayGround::Pointer<pc::String> newDef = modelPg.ArrayEmplace(
-          model->program.proto.Get<prime::graphics::LegacyProgram>()
-              .definitions);
+          model->program.proto.Get<pg::LegacyProgram>().definitions);
       modelPg.NewString(*newDef, "PS_IN_NORMAL");
     } catch (const es::FileNotFoundError &) {
     }
@@ -731,26 +732,29 @@ void ProcessMD2(AppContext *ctx) {
           TextureSlot{texHash.name, debugPg.AddString("smGlow")});
 
       pu::PlayGround::Pointer<pc::String> newDef = modelPg.ArrayEmplace(
-          model->program.proto.Get<prime::graphics::LegacyProgram>()
-              .definitions);
+          model->program.proto.Get<pg::LegacyProgram>().definitions);
       modelPg.NewString(*newDef, "PS_IN_GLOW");
     } catch (const es::FileNotFoundError &) {
     }
 
     modelPg.ArrayEmplace(
-        model->program.proto.Get<prime::graphics::LegacyProgram>().stages,
-        debugPg.AddRef("simple_model/main.vert", pc::GetClassHash<char>()).name,
+        model->program.proto.Get<pg::LegacyProgram>().stages,
+        debugPg
+            .AddRef("simple_model/main", pc::GetClassHash<pg::VertexSource>())
+            .name,
         0, GL_VERTEX_SHADER);
 
     modelPg.ArrayEmplace(
-        model->program.proto.Get<prime::graphics::LegacyProgram>().stages,
-        debugPg.AddRef("simple_model/main.frag", pc::GetClassHash<char>()).name,
+        model->program.proto.Get<pg::LegacyProgram>().stages,
+        debugPg
+            .AddRef("simple_model/main", pc::GetClassHash<pg::FragmentSource>())
+            .name,
         0, GL_FRAGMENT_SHADER);
 
     for (auto &t : textures) {
       modelPg.ArrayEmplace(
           model->textures, t.hash, debugPg.AddString(t.slot),
-          debugPg.AddRef("res/default", pc::GetClassHash<pg::Sampler>()).name,
+          debugPg.AddRef("core/default", pc::GetClassHash<pg::Sampler>()).name,
           0, 0);
     }
 

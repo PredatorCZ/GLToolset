@@ -36,8 +36,8 @@ struct MainShaderProgram {
   MainShaderProgram(prime::graphics::Program *program_) : program(program_) {
     uint32 numLights = 0;
 
-    for (auto &d : program->definitions) {
-      std::string_view ds(d.begin(), d.end());
+    for (auto &d : program->proto.Get<prime::graphics::LegacyProgram>().definitions) {
+      std::string_view ds(d);
 
       if (ds.starts_with("NUM_LIGHTS=")) {
         char buf[4]{};
