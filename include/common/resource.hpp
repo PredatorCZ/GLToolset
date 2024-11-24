@@ -31,28 +31,28 @@ struct ResourceData {
   }
 };
 
-// Load resource data, don't add it to global registry
-ResourceData LoadResource(const std::string &path);
+// Resource data
+ResourceData &LoadResource(ResourceHash hash, bool reload = false);
 ResourceData &FindResource(const void *address);
-
-void ProjectDataFolder(std::string_view path);
-std::string ProjectDataFolder();
-void AddWorkingFolder(std::string path);
 void FreeResource(ResourceData &resource);
 void ReplaceResource(ResourceData &oldResource, ResourceData &newResource);
+
+// Project data
+void ProjectDataFolder(std::string_view path);
+std::string ProjectDataFolder();
+
+// Working folders
+void AddWorkingFolder(std::string path);
 std::string ResourcePath(std::string path);
 std::string ResourceWorkingFolder(std::string path);
 std::string ResourceWorkingFolder(ResourceHash object);
 
-// Add resource to global registry for deferred loading
+// Resource registry
 void AddSimpleResource(ResourceData &&resource);
 ResourceHash AddSimpleResource(std::string path, uint32 classHash);
 template <class C> ResourceHash AddSimpleResource(const std::string &path) {
   return AddSimpleResource(path, GetClassHash<C>());
 }
-
-// Load resource data, that are registered via AddSimpleResource
-ResourceData &LoadResource(ResourceHash hash, bool reload = false);
 
 template <class C> struct InvokeGuard;
 
