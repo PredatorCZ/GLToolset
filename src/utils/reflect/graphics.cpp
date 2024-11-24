@@ -121,13 +121,28 @@ REFLECT(EMPTYCLASS(prime::graphics::UniformBlockData));
 
 REFLECT(CLASS(prime::graphics::StageObject),
   MEMBER(resource),
-  MEMBER(object),
   MEMBER_CAST(type, prime::graphics::GLEnum)
 );
 
-REFLECT(CLASS(prime::graphics::Program),
+REFLECT(CLASS(prime::graphics::LegacyProgram),
   MEMBER(stages),
   MEMBER(definitions)
+);
+
+REFLECT(EMPTYCLASS(prime::graphics::ShaderProto));
+
+REFLECT(CLASS(prime::graphics::ProtoFeature),
+  MEMBER(name),
+  MEMBER(value)
+);
+
+REFLECT(CLASS(prime::graphics::NuttyProgram),
+  MEMBER(proto),
+  MEMBER(features)
+);
+
+REFLECT(CLASS(prime::graphics::Program),
+  MEMBER(proto)
 );
 
 REFLECT(CLASS(prime::graphics::SampledTexture),
@@ -153,9 +168,7 @@ REFLECT(CLASS(prime::graphics::ModelSingle),
   MEMBER(vertexArray),
   MEMBER(textures),
   MEMBER(uniformBlocks),
-  MEMBER(uniformValues),
-  MEMBER(transformIndex),
-  MEMBER(transformBuffer)
+  MEMBER(uniformValues)
 );
 
 REFLECT(ENUM(prime::graphics::GLEnum),
