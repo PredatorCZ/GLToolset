@@ -10,7 +10,7 @@
 #include <thread>
 
 namespace prime::common {
-static std::vector<std::string> workingDirs;
+std::vector<std::string> workingDirs;
 static std::map<uint32, std::string> watches;
 static std::string projectFolder;
 

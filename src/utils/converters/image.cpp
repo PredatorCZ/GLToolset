@@ -793,4 +793,12 @@ void ProcessImage(AppContext *ctx) {
 }
 
 Reflector *ProcessImageSettings() { return &Settings(); }
+
+std::span<std::string_view> ProcessImageFilters() {
+  static std::string_view filters[]{".jpeg$", ".jpg$", ".bmp$", ".psd$",
+                                    ".tga$",  ".gif$", ".hdr$", ".pic$",
+                                    ".ppm$",  ".pgm$", ".png$"};
+
+  return filters;
+}
 } // namespace prime::utils

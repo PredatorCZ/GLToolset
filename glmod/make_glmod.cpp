@@ -22,14 +22,10 @@
 #include "spike/reflect/reflector.hpp"
 #include "utils/converters.hpp"
 
-std::string_view filters[]{
-    ".md2$",
-};
-
 static AppInfo_s appInfo{
     .filteredLoad = true,
     .header = GLMOD_DESC " v" GLMOD_VERSION ", " GLMOD_COPYRIGHT "Lukas Cone",
-    .filters = filters,
+    .filters = prime::utils::ProcessMD2Filters(),
 };
 
 AppInfo_s *AppInitModule() { return &appInfo; }

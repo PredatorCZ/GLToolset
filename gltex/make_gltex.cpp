@@ -20,16 +20,12 @@
 #include "spike/reflect/reflector.hpp"
 #include "utils/converters.hpp"
 
-std::string_view filters[]{".jpeg$", ".jpg$", ".bmp$", ".psd$",
-                           ".tga$",  ".gif$", ".hdr$", ".pic$",
-                           ".ppm$",  ".pgm$", ".png$"};
-
 static AppInfo_s appInfo{
     .filteredLoad = true,
     .header = GLTEX_DESC " v" GLTEX_VERSION ", " GLTEX_COPYRIGHT "Lukas Cone",
     .settings = reinterpret_cast<ReflectorFriend *>(
         prime::utils::ProcessImageSettings()),
-    .filters = filters,
+    .filters = prime::utils::ProcessImageFilters(),
 };
 
 AppInfo_s *AppInitModule() { return &appInfo; }

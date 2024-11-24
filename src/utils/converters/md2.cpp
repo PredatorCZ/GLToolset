@@ -711,8 +711,9 @@ void ProcessMD2(AppContext *ctx) {
       textures.emplace_back(
           TextureSlot{texHash.name, debugPg.AddString("smNormal")});
 
-      pu::PlayGround::Pointer<pc::LocalArray16<char>> newDef =
-          modelPg.ArrayEmplace(model->program.definitions);
+      pu::PlayGround::Pointer<pc::String> newDef = modelPg.ArrayEmplace(
+          model->program.proto.Get<prime::graphics::LegacyProgram>()
+              .definitions);
       modelPg.NewString(*newDef, "PS_IN_NORMAL");
     } catch (const es::FileNotFoundError &) {
     }
@@ -729,19 +730,20 @@ void ProcessMD2(AppContext *ctx) {
       textures.emplace_back(
           TextureSlot{texHash.name, debugPg.AddString("smGlow")});
 
-      pu::PlayGround::Pointer<pc::LocalArray16<char>> newDef =
-          modelPg.ArrayEmplace(model->program.definitions);
+      pu::PlayGround::Pointer<pc::String> newDef = modelPg.ArrayEmplace(
+          model->program.proto.Get<prime::graphics::LegacyProgram>()
+              .definitions);
       modelPg.NewString(*newDef, "PS_IN_GLOW");
     } catch (const es::FileNotFoundError &) {
     }
 
     modelPg.ArrayEmplace(
-        model->program.stages,
+        model->program.proto.Get<prime::graphics::LegacyProgram>().stages,
         debugPg.AddRef("simple_model/main.vert", pc::GetClassHash<char>()).name,
         0, GL_VERTEX_SHADER);
 
     modelPg.ArrayEmplace(
-        model->program.stages,
+        model->program.proto.Get<prime::graphics::LegacyProgram>().stages,
         debugPg.AddRef("simple_model/main.frag", pc::GetClassHash<char>()).name,
         0, GL_FRAGMENT_SHADER);
 
@@ -765,5 +767,13 @@ void ProcessMD2(AppContext *ctx) {
     BinWritterRef wrh(ctx->NewFile(outFile).str);
     wrh.WriteContainer(built);
   }
+}
+
+std::span<std::string_view> ProcessMD2Filters() {
+  static std::string_view filters[]{
+      ".md2$",
+  };
+
+  return filters;
 }
 } // namespace prime::utils

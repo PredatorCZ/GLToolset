@@ -1,10 +1,19 @@
+#include "utils/converters.hpp"
 #include "common/resource.hpp"
+#include "graphics/model_single.hpp"
+#include "graphics/texture.hpp"
 #include "spike/app_context.hpp"
 #include "spike/io/binreader.hpp"
 #include "spike/io/binwritter.hpp"
 #include "spike/io/directory_scanner.hpp"
 #include "spike/io/stat.hpp"
+#include "spike/reflect/reflector.hpp"
+#include <map>
 #include <memory>
+
+namespace prime::common {
+extern std::vector<std::string> workingDirs;
+}
 
 namespace {
 AFileInfo basePath;
@@ -116,55 +125,17 @@ struct Context : AppContext {
   }
 
   NewFileContext NewFile(const std::string &path) override {
-    std::string filePath;
-    size_t delimeter = 0;
-
-    if (basePathParts.empty()) {
-      filePath = std::string(basePath.GetFullPath()) + path;
-      delimeter = basePath.GetFullPath().size();
-    } else {
-      AFileInfo pathInfo(path);
-      auto exploded = pathInfo.Explode();
-      const size_t numItems = std::min(exploded.size(), basePathParts.size());
-
-      if (basePath.GetFullPath().at(0) == '/') {
-        filePath.push_back('/');
-      }
-
-      size_t i = 0;
-
-      for (; i < numItems; i++) {
-        if (basePathParts[i] == exploded[i]) {
-          filePath.append(exploded[i]);
-          filePath.push_back('/');
-          continue;
-        }
-
-        break;
-      }
-
-      for (size_t j = i; j < basePathParts.size(); j++) {
-        filePath.append(basePathParts[j]);
-        filePath.push_back('/');
-      }
-
-      delimeter = filePath.size();
-
-      for (; i < exploded.size(); i++) {
-        filePath.append(exploded[i]);
-        filePath.push_back('/');
-      }
-
-      filePath.pop_back();
-    }
-
+    const std::string &cacheDir = prime::common::CacheDataFolder();
+    const std::string filePath = cacheDir + path;
+    ::prime::common::RegisterResource(path);
     try {
       outFile = BinWritter(filePath);
     } catch (const es::FileInvalidAccessError &e) {
+      // todo: add to watchlist
       mkdirs(filePath);
       outFile = BinWritter(filePath);
     }
-    return {outFile.BaseStream(), filePath, delimeter};
+    return {outFile.BaseStream(), filePath, cacheDir.size()};
   }
 
   NewTexelContext *NewImage(NewTexelContextCreate,
@@ -172,16 +143,56 @@ struct Context : AppContext {
     throw std::logic_error("Unsupported call");
   }
 
-  Context(const std::string &input) {
-    mainFile.Open(input);
-    workingFile.Load(input);
+  Context(const ::prime::common::ResourcePath &input)
+      : path(input), mainFile(std::string(input.workingDir) + input.localPath) {
+    workingFile.Load(input.localPath);
   }
+
+  ::prime::common::ResourcePath path;
 
   BinWritter outFile;
 
   BinReader mainFile;
   BinReader streamedFiles[32];
   uint32 usedFiles = 0;
+};
+
+struct Converter {
+  void (*Func)(AppContext *);
+  Reflector *settings = nullptr;
+  PathFilter filter;
+};
+
+PathFilter MakeFilter(std::span<std::string_view> items) {
+  PathFilter filter;
+
+  for (auto &i : items) {
+    filter.AddFilter(i);
+  }
+
+  return filter;
+}
+
+std::map<uint32, std::vector<Converter>> CONVERTERS{
+    {
+        prime::common::GetClassHash<prime::graphics::ModelSingle>(),
+        {
+            Converter{
+                .Func = prime::utils::ProcessMD2,
+                .filter = MakeFilter(prime::utils::ProcessMD2Filters()),
+            },
+        },
+    },
+    {
+        prime::common::GetClassHash<prime::graphics::Texture>(),
+        {
+            Converter{
+                .Func = prime::utils::ProcessImage,
+                .settings = prime::utils::ProcessImageSettings(),
+                .filter = MakeFilter(prime::utils::ProcessImageFilters()),
+            },
+        },
+    },
 };
 } // namespace
 
@@ -194,7 +205,50 @@ void ContextOutputPath(std::string output) {
   basePathParts = basePath.Explode();
 }
 
-std::unique_ptr<AppContext> MakeContext(const std::string &filePath) {
+std::unique_ptr<AppContext> MakeContext(const common::ResourcePath &filePath) {
   return std::make_unique<Context>(filePath);
+}
+
+bool ConvertResource(const common::ResourcePath &path) {
+  auto found = CONVERTERS.find(path.hash.type);
+
+  if (found == CONVERTERS.end()) {
+    return false;
+  }
+
+  /*DirectoryScanner ds;
+  AFileInfo pathInfo(path);
+  std::string filePattern("^");
+  filePattern.append(pathInfo.GetFilename());
+  ds.AddFilter(filePattern);
+  std::vector<std::string> viableFiles;
+
+  for (auto &d : common::workingDirs) {
+    std::string wdir(d);
+    wdir.append(pathInfo.GetFolder());
+    ds.Scan(wdir);
+    viableFiles.insert(viableFiles.end(), ds.Files().begin(), ds.Files().end());
+  }*/
+
+  std::vector<Converter> viableConvertors;
+
+  for (auto &c : found->second) {
+    // for (auto &f : viableFiles) {
+    if (c.filter.IsFiltered(path.localPath)) {
+      viableConvertors.emplace_back(c);
+    }
+    //}
+  }
+
+  if (viableConvertors.empty()) {
+    return false;
+  }
+
+  Context ctx(path);
+  viableConvertors.front().Func(&ctx);
+
+  int t = 0;
+
+  return true;
 }
 } // namespace prime::utils
