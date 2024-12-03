@@ -28,7 +28,7 @@ struct CubeObject : MainShaderProgram {
     pg::RebuildProgram(*model, pc::MakeHash<pg::ModelSingle>(
                                    flags == pg::TextureFlag::NormalMap
                                        ? "editor/texture_cube_normal"
-                                       : "editor/texture_cube_albedo"));
+                                       : "editor/texture_cube_albedo"), 1);
   }
 
   void Render() {

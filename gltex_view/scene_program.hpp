@@ -34,7 +34,7 @@ struct MainShaderProgram {
   prime::graphics::Program *program;
 
   MainShaderProgram(prime::graphics::Program *program_) : program(program_) {
-    uint32 numLights = 0;
+    uint32 numLights = 1;
 
     for (auto &d : program->proto.Get<prime::graphics::LegacyProgram>().definitions) {
       std::string_view ds(d);

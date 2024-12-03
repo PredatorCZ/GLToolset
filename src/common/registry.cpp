@@ -16,7 +16,14 @@ auto &RegistryHE() {
 uint32 prime::common::GetClassFromExtension(std::string_view ext) {
   prime::common::ExtString key;
   memcpy(key.c, ext.data(), std::min(sizeof(key) - 1, ext.size()));
-  return RegistryEH().at(key);
+
+  auto found = RegistryEH().find(key);
+
+  if (found == RegistryEH().end()) {
+    return 0;
+  }
+
+  return found->second;
 }
 
 std::string_view prime::common::GetExtentionFromHash(uint32 hash) {

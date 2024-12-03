@@ -8,21 +8,13 @@
 #include <GL/glew.h>
 
 namespace prime::graphics {
-void RebuildProgram(ModelSingle &model, common::ResourceHash referee);
-
 static void AddModelSingle(ModelSingle &hdr, common::ResourceHash referee) {
-  common::LinkResource<VertexArray>(hdr.vertexArray);
+  const VertexArray *verts = common::LinkResource<VertexArray>(hdr.vertexArray);
 
-  const VertexArray *verts = hdr.vertexArray;
+  RebuildProgram(hdr, referee, 0);
 
-  RebuildProgram(hdr, referee);
-
-  uint32 transformBuffer;
-  glGenBuffers(1, &transformBuffer);
-  glBindBuffer(GL_UNIFORM_BUFFER, transformBuffer);
-  hdr.transformBuffer = transformBuffer;
-  // hdr.numUVTransforms = verts->uvTransform.numItems;
-  // hdr.numTransforms = verts->transforms.numItems;
+  glGenBuffers(1, &hdr.transformBuffer);
+  glBindBuffer(GL_UNIFORM_BUFFER, hdr.transformBuffer);
 
   utils::InstanceTransformsBuilder tmBuilder(verts->transforms.numItems,
                                              verts->uvTransform.numItems);
@@ -143,7 +135,8 @@ void UpdateTransform(ModelSingle &model, const glm::dualquat *tm,
   glUnmapNamedBuffer(model.transformBuffer);
 }
 
-void RebuildProgram(ModelSingle &model, common::ResourceHash referee) {
+void RebuildProgram(ModelSingle &model, common::ResourceHash referee,
+                    uint32 numLights) {
   bool normalUFlag = false;
   bool normalZFlag = false;
   bool hasNormal = false;
@@ -177,6 +170,10 @@ void RebuildProgram(ModelSingle &model, common::ResourceHash referee) {
   }
 
   std::vector<std::string> secondaryDefs;
+
+  if (numLights > 0) {
+    secondaryDefs.emplace_back("NUM_LIGHTS=" + std::to_string(numLights));
+  }
 
   if (normalUFlag) {
     secondaryDefs.emplace_back("TS_NORMAL_UNORM=true");
@@ -250,7 +247,8 @@ void RebuildProgram(ModelSingle &model, common::ResourceHash referee) {
       uint32 bindIndex = intro.uniformBlockBinds.at(JenHash(u.bufferSlot));
       u.bindIndex = bindIndex;
     } else {
-      printerror("Cannot find unform block bind " << std::hex << u.bufferSlot.raw());
+      printerror("Cannot find unform block bind " << std::hex
+                                                  << u.bufferSlot.raw());
     }
   }
 
@@ -282,7 +280,7 @@ template <> class prime::common::InvokeGuard<prime::graphics::ModelSingle> {
 
                 graphics::RebuildProgram(
                     *common::LoadResource(hash).As<graphics::ModelSingle>(),
-                    hash);
+                    hash, 0);
               },
       });
 };

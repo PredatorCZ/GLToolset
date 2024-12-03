@@ -168,7 +168,9 @@ ModelObject BuildFromModel(std::string path) {
   auto &hdrData = pc::LoadResource(mainModel);
   auto hdr = pc::GetResourceHandle(hdrData);
   hdrData.numRefs++;
-  return ModelObject(static_cast<pg::ModelSingle *>(hdr));
+  auto mdl = static_cast<pg::ModelSingle *>(hdr);
+  prime::graphics::RebuildProgram(*mdl, hdrData.hash, 1);
+  return ModelObject(mdl);
 }
 
 void GLAPIENTRY MessageCallback(GLenum source, GLenum type, GLuint id,

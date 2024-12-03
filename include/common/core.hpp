@@ -66,6 +66,11 @@ union ExtString {
   char c[8];
   constexpr ExtString() = default;
   constexpr ExtString(uint64 r) : raw(r) {}
+  constexpr ExtString(std::string_view w) {
+    for (size_t i = 0; i < std::min(w.size(), sizeof(c)); i++) {
+      c[i] = w[i];
+    }
+  }
   constexpr operator std::string_view() const { return c; }
   constexpr bool operator<(ExtString o) const { return raw < o.raw; }
 };
@@ -176,7 +181,7 @@ union Color {
     uint8 a;
   };
 
-  uint8 value;
+  uint32 value;
 };
 
 HASH_CLASS(Color);

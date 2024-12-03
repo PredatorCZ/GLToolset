@@ -406,6 +406,7 @@ namespace prime::utils {
 void ProcessImage(AppContext *ctx) {
   auto &settings = Settings();
   const bool isNormalMap =
+      settings.normalMapPatterns.size() &&
       settings.normalExts.IsFiltered(ctx->workingFile.GetFilename());
   auto rawData = GetImageData(ctx->GetStream(), isNormalMap);
   uint32 inputCrc = 0;
@@ -496,7 +497,13 @@ void ProcessImage(AppContext *ctx) {
     surf.stride = rawData.width * 4;
     surf.ptr = static_cast<uint8_t *>(rawData.data);
 
-    TextureEntry entry(currentTarget, level, currentStream, 0, wr.Tell());
+    TextureEntry entry{
+        .level = uint8(level),
+        .streamIndex = uint8(currentStream),
+        .target = currentTarget,
+        .bufferSize = 0,
+        .bufferOffset = wr.Tell(),
+    };
 
     if (rawData.origChannels == STBI_rgb_alpha) {
       metaFlags += TextureFlag::AlphaMasked;

@@ -19,6 +19,19 @@ static std::map<uint32, uint32> TEXTURE_REMAPS;
 static std::deque<std::function<void()>> DEFERRED_LOADER_QUEUE[3];
 static uint32 MIN_DEFER_LEVEL = 1;
 static uint32 CLAMP_RES = 4096;
+static TextureUnit ERROR_TEXTURE{};
+
+static void MakeErrorTexture() {
+  if (ERROR_TEXTURE.id == 0) {
+    ERROR_TEXTURE.target = GL_TEXTURE_2D;
+    glGenTextures(1, &ERROR_TEXTURE.id);
+    glBindTexture(ERROR_TEXTURE.target, ERROR_TEXTURE.id);
+    uint32 data = 0xffff00ff;
+    glTexImage2D(ERROR_TEXTURE.target, 0, GL_RGBA8, 1, 1, 0, GL_RGBA,
+                 GL_UNSIGNED_BYTE, &data);
+    glBindTexture(ERROR_TEXTURE.target, 0);
+  }
+}
 
 static void LoadBindedTextureLevels(DeferredPayload pl) {
   auto &hdr = pl.hdr;
@@ -167,10 +180,10 @@ static void LoadBindedTextureLevels(DeferredPayload pl) {
   glBindTexture(hdr.target, 0);
   prime::common::FreeResource(data);
 
-  if (hdr.numStreams == pl.streamIndex + 1) {
+  /*if (hdr.numStreams == pl.streamIndex + 1) {
     auto &hdrData = prime::common::FindResource(&pl.hdr);
     prime::common::FreeResource(hdrData);
-  }
+  }*/
 };
 
 static TextureUnit AddTexture(const prime::graphics::Texture &hdr,
@@ -182,8 +195,7 @@ static TextureUnit AddTexture(const prime::graphics::Texture &hdr,
   LoadBindedTextureLevels({hdr, nameHash, unit.id});
 
   if (hdr.swizzle.numItems == 4) {
-    glTexParameteriv(hdr.target, GL_TEXTURE_SWIZZLE_RGBA,
-                     hdr.swizzle.begin());
+    glTexParameteriv(hdr.target, GL_TEXTURE_SWIZZLE_RGBA, hdr.swizzle.begin());
   }
 
   for (uint32 i = 1; i < hdr.numStreams; i++) {
@@ -207,8 +219,14 @@ TextureUnit prime::graphics::LookupTexture(uint32 hash) {
     return TEXTURE_UNITS.at(TEXTURE_REMAPS.at(hash));
   }
 
-  common::LoadResource(
-      common::ResourceHash(hash, common::GetClassHash<graphics::Texture>()));
+  try {
+    common::LoadResource(
+        common::ResourceHash(hash, common::GetClassHash<graphics::Texture>()));
+  } catch (const es::FileNotFoundError &) {
+    MakeErrorTexture();
+    return ERROR_TEXTURE;
+  }
+
   return TEXTURE_UNITS.at(hash);
 }
 

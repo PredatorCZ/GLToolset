@@ -25,6 +25,9 @@ struct NormalVisualizer {
       }
     }
 
+    prime::graphics::RebuildProgram(*newModel, mdlHash, 0);
+    newModel->transformBuffer = mdl->transformBuffer;
+
     for (auto &u : newModel->uniformValues) {
       if (u.name == "magnitude") {
         magnitude =

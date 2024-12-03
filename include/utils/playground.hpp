@@ -32,6 +32,10 @@ private:
 
     ~BtPointer() { UnRegister(); }
     void Register() {
+      if (owner == nullptr) {
+        return;
+      }
+
       assert([&] {
         auto found =
             std::find(owner->pointers.begin(), owner->pointers.end(), this);
@@ -39,7 +43,11 @@ private:
       }());
       owner->pointers.push_back(this);
     }
-    void UnRegister() { std::erase(owner->pointers, this); }
+    void UnRegister() {
+      if (owner) {
+        std::erase(owner->pointers, this);
+      }
+    }
 
     uint32 offset;
     PlayGround *owner;

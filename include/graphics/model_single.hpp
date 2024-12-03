@@ -5,7 +5,7 @@
 namespace prime::graphics {
 struct ModelSingle;
 
-void RebuildProgram(ModelSingle &model, common::ResourceHash referee);
+void RebuildProgram(ModelSingle &model, common::ResourceHash referee, uint32 numLights);
 void Draw(const ModelSingle &model);
 void UpdateTransform(ModelSingle &model, const glm::dualquat *tm,
                      const glm::vec3 *scale);

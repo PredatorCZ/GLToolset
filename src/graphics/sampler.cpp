@@ -1,4 +1,5 @@
 #include "graphics/sampler.hpp"
+#include "common/resource.hpp"
 #include "spike/type/vectors.hpp"
 #include <GL/glew.h>
 #include <map>
@@ -8,7 +9,6 @@ static uint32 anisotropy = 1;
 
 namespace prime::graphics {
 uint32 AddSampler(uint32 hash, const Sampler &sampler) {
-  ValidateClass(sampler);
   uint32 unit;
   glGenSamplers(1, &unit);
   samplerUnits.insert({hash, unit});
@@ -28,7 +28,6 @@ uint32 AddSampler(uint32 hash, const Sampler &sampler) {
         glSamplerParameterfv(unit, p.id, unpacked._arr);
       }
     });
-
   }
 
   return unit;
@@ -42,8 +41,31 @@ void SetDefaultAnisotropy(uint32 newValue) {
   }
 }
 
-uint32 LookupSampler(uint32 hash) { return samplerUnits.at(hash); }
+uint32 LookupSampler(uint32 hash) {
+  auto found = samplerUnits.find(hash);
+
+  if (found != samplerUnits.end()) {
+    return found->second;
+  }
+
+  common::LoadResource(
+      common::ResourceHash(hash, common::GetClassHash<graphics::Sampler>()));
+
+  return samplerUnits.at(hash);
+}
 
 } // namespace prime::graphics
+
+template <> class prime::common::InvokeGuard<prime::graphics::Sampler> {
+  static inline const bool data =
+      prime::common::AddResourceHandle<prime::graphics::Sampler>({
+          .Process =
+              [](ResourceData &data) {
+                auto hdr = data.As<graphics::Sampler>();
+                prime::graphics::AddSampler(data.hash.name, *hdr);
+              },
+          .Delete = nullptr,
+      });
+};
 
 REGISTER_CLASS(prime::graphics::Sampler);

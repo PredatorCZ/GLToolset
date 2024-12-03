@@ -30,6 +30,6 @@ template <class C> struct ResourceToHandle : JenHash3 {
   operator ResourceHash() const {
     return {operator uint32(), GetClassHash<C>()};
   };
-  operator bool() const { return operator uint32() & 0xf0000000; }
+  operator bool() const { return operator uint32() & 0xff000000; }
 };
 } // namespace prime::common

@@ -12,9 +12,9 @@ struct InstanceTransformSpanner {
   InstanceTransformSpanner(char *buffer, size_t numTms,
                            size_t numUvTransforms) {
     uvTransform = {reinterpret_cast<glm::vec4 *>(buffer), numUvTransforms};
-    transforms = {
-        reinterpret_cast<common::Transform *>(uvTransform.end().operator->()),
-        numTms};
+    transforms = {reinterpret_cast<common::Transform *>(
+                      buffer + sizeof(glm::vec4) * numUvTransforms),
+                  numTms};
   }
 };
 

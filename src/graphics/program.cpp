@@ -99,7 +99,7 @@ prime::graphics::ProgramIntrospection IntrospectShader(uint32 program) {
       if (name.starts_with("sm")) {
         retVal.textureLocations.emplace(nameDataPtr, location);
       } else {
-        prime::graphics::ProgramIntrospection::Uniform uniform;
+        prime::graphics::ProgramIntrospection::Uniform uniform{};
         if (name.starts_with("v2")) {
           uniform.size = 1;
         } else if (name.starts_with("v3")) {
