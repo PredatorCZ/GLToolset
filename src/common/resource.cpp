@@ -1,46 +1,24 @@
 #include "common/resource.hpp"
 #include "spike/io/binreader.hpp"
+#include "spike/io/directory_scanner.hpp"
 #include "spike/io/fileinfo.hpp"
-#include <map>
-
-#include "spike/master_printer.hpp"
 #include "spike/io/stat.hpp"
+#include "spike/master_printer.hpp"
+#include "utils/converters.hpp"
 #include <dirent.h>
+#include <map>
+#include <script/scriptapi.hpp>
 #include <sys/inotify.h>
 #include <thread>
 
 namespace prime::common {
 std::vector<std::string> workingDirs;
 static std::map<uint32, std::string> watches;
+static std::map<uint32, std::vector<ResourcePath>> workDirFiles;
 static std::string projectFolder;
+static std::string projectCacheFolder;
 
-std::string ResourcePath(std::string path) {
-  for (auto &w : workingDirs) {
-    try {
-      std::string absPath = path.front() == '/' ? path : w + path;
-      BinReader rd(absPath);
-      return absPath;
-    } catch (const es::FileNotFoundError &) {
-    }
-  }
-
-  throw es::FileNotFoundError(path);
-}
-
-std::string ResourceWorkingFolder(std::string path) {
-  for (auto &w : workingDirs) {
-    try {
-      std::string absPath = path.front() == '/' ? path : w + path;
-      BinReader rd(absPath);
-      return w;
-    } catch (const es::FileNotFoundError &) {
-    }
-  }
-
-  throw es::FileNotFoundError(path);
-}
-
-ResourceData LoadResource(const std::string &path) {
+static ResourceData LoadResource(const std::string &path) {
   AFileInfo fileInfo(path);
   ResourceData data{};
   data.hash.name = JenkinsHash3_(fileInfo.GetFullPathNoExt());
@@ -58,12 +36,17 @@ ResourceData LoadResource(const std::string &path) {
 
   bool found = false;
 
-  for (auto &w : workingDirs) {
-    try {
-      Load(w);
-      found = true;
-      break;
-    } catch (const es::FileNotFoundError &) {
+  try {
+    Load(projectCacheFolder);
+    found = true;
+  } catch (const es::FileNotFoundError &) {
+    for (auto &w : workingDirs) {
+      try {
+        Load(w);
+        found = true;
+        break;
+      } catch (const es::FileNotFoundError &) {
+      }
     }
   }
 
@@ -96,21 +79,22 @@ ResourceHash AddSimpleResource(std::string path, uint32 classHash) {
 }
 
 void AddSimpleResource(ResourceData &&resource) {
+  ResourceHash key(resource.hash);
+
   auto [item, _] = resources.insert_or_assign(
-      resource.hash,
+      key,
       std::pair<std::string, ResourceData>{{}, std::move(resource)});
   resourceFromPtr.emplace(item->second.second.buffer.data(),
                           &item->second.second);
 }
 
-std::string ResourceWorkingFolder(ResourceHash object) {
-  auto found = resources.find(object);
+void RegisterResource(std::string path) {
+  AFileInfo finf(path);
+  const uint32 name = JenkinsHash3_(finf.GetFullPathNoExt());
+  const uint32 type = GetClassFromExtension(finf.GetExtension().substr(1));
 
-  if (found == resources.end()) {
-    throw es::FileNotFoundError("[object]");
-  }
-
-  return ResourceWorkingFolder(found->second.first);
+  ResourceHash hash(name, type);
+  resources.insert({hash, {path, {hash, {}}}});
 }
 
 void FreeResource(ResourceData &resource) {
@@ -120,6 +104,18 @@ void FreeResource(ResourceData &resource) {
 
 ResourceData &FindResource(const void *address) {
   return *resourceFromPtr.at(address);
+}
+
+const ResourcePath &FindResource(ResourceHash hash) {
+  auto &files = workDirFiles.at(hash.name);
+
+  for (auto &f : files) {
+    if (f.hash.type == hash.type) {
+      return f;
+    }
+  }
+
+  throw std::out_of_range("Resource not found in working directories.");
 }
 
 auto &Registry() {
@@ -134,10 +130,49 @@ bool AddResourceHandle(uint32 hash, ResourceHandle handle) {
 void *GetResourceHandle(ResourceData &data) { return data.buffer.data(); }
 
 const ResourceHandle &GetClassHandle(uint32 classHash) {
-  Registry().at(classHash);
+  return Registry().at(classHash);
 }
 
 ResourceData &LoadResource(ResourceHash hash, bool reload) {
+  auto found = resources.find(hash);
+
+  if (found == resources.end()) {
+    auto foundWork = workDirFiles.find(hash.name);
+
+    if (foundWork == workDirFiles.end()) {
+      throw es::FileNotFoundError();
+    }
+
+    bool foundExact = false;
+    ResourcePath nutVariant;
+    ResourcePath rawVariant;
+
+    for (auto &f : foundWork->second) {
+      if (f.hash.type == hash.type) {
+        resources.insert({hash, {f.localPath, {hash, {}}}});
+        foundExact = true;
+        break;
+      } else if (f.localPath.ends_with(".nut")) {
+        nutVariant = f;
+      } else {
+        ResourcePath rawVariant = f;
+        rawVariant.hash = hash;
+        if (utils::ConvertResource(rawVariant)) {
+          PrintInfo("Converted: ", f.localPath);
+          break;
+        }
+      }
+    }
+
+    if (!foundExact) {
+      if (nutVariant.localPath.size() > 0) {
+        script::CompileScript(nutVariant);
+      }
+    }
+
+    int t = 0;
+  }
+
   auto &res = resources.at(hash);
   auto &[fileName, resource] = res;
 
@@ -245,7 +280,7 @@ static std::jthread WATCHER([](std::stop_token stop_token) {
   }
 });*/
 
-void WatchTree(const std::string &path) {
+void WatchTree(const std::string &path, std::string_view workDir) {
   int watchFd = inotify_add_watch(INOTIFY, path.c_str(), IN_CLOSE_WRITE);
   if (watchFd < 0) {
     PrintWarning("Failed to create watch for ", path, " ", strerror(errno));
@@ -262,12 +297,30 @@ void WatchTree(const std::string &path) {
   dirent *cFile = nullptr;
 
   while ((cFile = readdir(cDir)) != nullptr) {
-    if (!strcmp(cFile->d_name, ".") || !strcmp(cFile->d_name, "..")) {
+    if (!strcmp(cFile->d_name, ".") || !strcmp(cFile->d_name, "..") ||
+        !strcmp(cFile->d_name, ".prime")) {
       continue;
     }
 
+    std::string absPath(path + '/' + cFile->d_name);
+
     if (cFile->d_type == DT_DIR) {
-      WatchTree(path + '/' + cFile->d_name);
+      WatchTree(absPath, workDir);
+    } else {
+      std::string localPath = absPath.substr(workDir.size());
+      //PrintInfo(localPath);
+      AFileInfo finf(localPath);
+      const uint32 hash = JenkinsHash3_(finf.GetFullPathNoExt());
+      std::string_view ext(finf.GetExtension());
+      const uint32 type =
+          ext.empty() ? 0 : GetClassFromExtension(ext.substr(1));
+      ResourcePath resPath{
+          .hash = ResourceHash(hash, type),
+          .localPath = localPath,
+          .workingDir = workDir,
+      };
+
+      workDirFiles[hash].emplace_back(resPath);
     }
   }
 
@@ -276,13 +329,15 @@ void WatchTree(const std::string &path) {
 
 void AddWorkingFolder(std::string path) {
   workingDirs.emplace_back(path);
-  if (path.back() == '/') {
+  while (path.size() && path.back() == '/') {
     path.pop_back();
   }
-  WatchTree(path);
+  WatchTree(path, workingDirs.back());
 }
 
 void ProjectDataFolder(std::string_view path) {
+  AddWorkingFolder(std::string(path));
+
   while (path.back() == '/') {
     path.remove_suffix(1);
   }
@@ -290,7 +345,29 @@ void ProjectDataFolder(std::string_view path) {
   projectFolder.append(path);
   projectFolder.append("/.prime/");
   es::mkdir(projectFolder);
+  projectCacheFolder = projectFolder;
+  projectCacheFolder.append("cache/");
+  es::mkdir(projectCacheFolder);
+
+  DirectoryScanner sc;
+  sc.Scan(projectCacheFolder);
+
+  for (std::string f : sc.Files()) {
+    f.erase(0, projectCacheFolder.size());
+    AFileInfo finf(f);
+    try {
+      std::string_view ext = finf.GetExtension();
+      ext.remove_prefix(1);
+      uint32 hash = GetClassFromExtension(ext);
+      ResourceHash rhash(JenkinsHash3_(finf.GetFullPathNoExt()), hash);
+
+      resources.insert({rhash, {std::string(finf.GetFullPath()), {rhash, {}}}});
+    } catch (const std::out_of_range &) {
+    }
+  }
 }
 
-std::string ProjectDataFolder() { return projectFolder; }
+const std::string &ProjectDataFolder() { return projectFolder; }
+
+const std::string &CacheDataFolder() { return projectCacheFolder; }
 } // namespace prime::common

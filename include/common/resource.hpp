@@ -13,6 +13,14 @@ template <class C> ResourceHash MakeHash(std::string_view name) {
                       GetClassHash<C>()};
 }
 
+struct ResourcePath {
+  ResourceHash hash;
+  std::string localPath;
+  std::string_view workingDir;
+
+  std::string AbsPath() const { return std::string(workingDir) + localPath; }
+};
+
 struct ResourceData {
   ResourceHash hash;
   std::string buffer;
@@ -34,20 +42,24 @@ struct ResourceData {
 // Resource data
 ResourceData &LoadResource(ResourceHash hash, bool reload = false);
 ResourceData &FindResource(const void *address);
+const ResourcePath &FindResource(ResourceHash hash);
 void FreeResource(ResourceData &resource);
 void ReplaceResource(ResourceData &oldResource, ResourceData &newResource);
+template<class C>
+const ResourcePath &FindResource(JenHash3 name) {
+  return FindResource(MakeHash<C>(name));
+}
 
 // Project data
 void ProjectDataFolder(std::string_view path);
-std::string ProjectDataFolder();
+const std::string &ProjectDataFolder();
+const std::string &CacheDataFolder();
 
 // Working folders
 void AddWorkingFolder(std::string path);
-std::string ResourcePath(std::string path);
-std::string ResourceWorkingFolder(std::string path);
-std::string ResourceWorkingFolder(ResourceHash object);
 
 // Resource registry
+void RegisterResource(std::string path);
 void AddSimpleResource(ResourceData &&resource);
 ResourceHash AddSimpleResource(std::string path, uint32 classHash);
 template <class C> ResourceHash AddSimpleResource(const std::string &path) {
@@ -74,6 +86,10 @@ const ResourceHandle &GetClassHandle(uint32 classHash);
 template <class C> C *LinkResource(Pointer<C> &resource) {
   if (resource.isLinked) {
     return resource;
+  }
+
+  if (resource.resourceHash.name == 0) {
+    return nullptr;
   }
 
   auto &resData = LoadResource(resource.resourceHash);

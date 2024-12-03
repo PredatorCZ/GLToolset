@@ -36,39 +36,6 @@ namespace pg = prime::graphics;
 #include "render_model.hpp"
 #include "render_ts.hpp"
 
-void PreloadResources() {
-  pc::AddWorkingFolder("/home/lukas/github/gltoolset/src/shaders/");
-  pc::AddSimpleResource<char>("single_texture/main_normal.frag");
-  pc::AddSimpleResource<char>("single_texture/main_albedo.frag");
-  pc::AddSimpleResource<char>("basics/simple_sprite.vert");
-  pc::AddSimpleResource<char>("basics/simple_cube.vert");
-  pc::AddSimpleResource<char>("light/main.frag");
-
-  pc::AddSimpleResource<char>("basics/ts_normal.vert");
-  pc::AddSimpleResource<char>("basics/ts_normal.geom");
-  pc::AddSimpleResource<char>("basics/ts_normal.frag");
-
-  pc::AddSimpleResource<char>("basics/aabb_cube.frag");
-
-  pc::AddSimpleResource<char>("post_process/glow_horizontal.frag");
-  pc::AddSimpleResource<char>("post_process/glow_vertical.frag");
-  pc::AddSimpleResource<char>("post_process/combine.frag");
-  pc::AddSimpleResource<char>("basics/viewport.vert");
-
-  {
-    pc::AddSimpleResource<pg::Texture>("res/light");
-    pc::AddSimpleResource<pg::TextureStream<0>>("res/light");
-  }
-
-  {
-    pc::ResourceHash defaultSampler =
-        pc::AddSimpleResource<pg::Sampler>("res/default");
-    auto &res = pc::LoadResource(defaultSampler);
-    auto *smpl = res.As<pg::Sampler>();
-    pg::AddSampler(defaultSampler.name, *smpl);
-  }
-}
-
 using MainUBType = prime::shaders::single_texture::ubFragmentProperties;
 
 struct MainTexture {
@@ -85,15 +52,9 @@ struct MainTexture {
 
 MainTexture BuildFromTexture(MainUBType &ub, std::string path) {
   auto LoadTexture = [&path] {
-    auto mainTexture = pc::AddSimpleResource<pg::Texture>(path);
-
-    for (size_t s = 0; s < 4; s++) {
-      auto tex = pu::RedirectTexture({}, s);
-      pc::AddSimpleResource(path, tex.type);
-    }
-
-    pc::LoadResource(mainTexture);
-    return mainTexture.name;
+    auto hash = pc::MakeHash<pg::Texture>(path);
+    pc::LoadResource(hash);
+    return hash.name;
   };
 
   auto textureName = LoadTexture();
@@ -164,8 +125,8 @@ MainTexture BuildFromTexture(MainUBType &ub, std::string path) {
 }
 
 ModelObject BuildFromModel(std::string path) {
-  auto mainModel = pc::AddSimpleResource<pg::ModelSingle>(path);
-  auto &hdrData = pc::LoadResource(mainModel);
+  auto hash = pc::MakeHash<pg::ModelSingle>(path);
+  auto &hdrData = pc::LoadResource(hash);
   auto hdr = pc::GetResourceHandle(hdrData);
   hdrData.numRefs++;
   auto mdl = static_cast<pg::ModelSingle *>(hdr);
@@ -254,10 +215,9 @@ int main(int, char *argv[]) {
 
   pg::MinimumStreamIndexForDeferredLoading(-1);
 
-  AFileInfo finf(argv[0]);
-  pc::AddWorkingFolder(std::string(finf.GetFolder()));
-  pc::AddWorkingFolder("/home/lukas/Downloads/alienarena/recompiled/");
-  PreloadResources();
+  pc::AddWorkingFolder("/home/lukas/github/gltoolset/src/shaders/");
+  pc::AddWorkingFolder("/home/lukas/github/gltoolset/gltex_view/res/");
+  pc::ProjectDataFolder("/home/lukas/Downloads/alienarena/");
 
   MainUBType *mainUBData = [&] {
     pc::ResourceData mainUniform;
@@ -287,13 +247,13 @@ int main(int, char *argv[]) {
   canvas.Finalize();
 
   pg::PostProcess ppGlowH(pg::CreatePostProcess(width, height));
-  ppGlowH.stages.emplace_back(pg::AddPostProcessStage(
-      JenkinsHash3_("post_process/glow_horizontal.frag"), canvas));
+  ppGlowH.stages.emplace_back(
+      pg::AddPostProcessStage("post_process/glow_horizontal", canvas));
 
   pg::PostProcess ppGlowV(pg::CreatePostProcess(width, height));
   {
-    pg::PostProcessStage stage(pg::AddPostProcessStage(
-        JenkinsHash3_("post_process/glow_vertical.frag"), canvas));
+    pg::PostProcessStage stage(
+        pg::AddPostProcessStage("post_process/glow_vertical", canvas));
     stage.textures.front().id = ppGlowH.texture;
     ppGlowV.stages.emplace_back(stage);
   }
@@ -305,8 +265,8 @@ int main(int, char *argv[]) {
 
   pg::PostProcess ppCombine(pg::CreatePostProcess(width, height));
   {
-    pg::PostProcessStage stage(pg::AddPostProcessStage(
-        JenkinsHash3_("post_process/combine.frag"), canvas));
+    pg::PostProcessStage stage(
+        pg::AddPostProcessStage("post_process/combine", canvas));
     auto &bgclu = stage.uniforms.at("BGColor");
     bgclu.data[0] = 0.2;
     bgclu.data[1] = 0.3;
@@ -361,9 +321,11 @@ int main(int, char *argv[]) {
     visModel.reset();
     visAABB.reset();
 
-    uint32 classId = pc::GetClassFromExtension(assInf.GetExtension().substr(1));
+    std::string_view ext = assInf.GetExtension().substr(1);
 
-    if (classId == pc::GetClassHash<pg::ModelSingle>()) {
+    uint32 classId = pc::GetClassFromExtension(ext);
+
+    if (classId == pc::GetClassHash<pg::ModelSingle>() || ext == "md2") {
       mainObject = BuildFromModel(std::string(assInf.GetFullPathNoExt()));
       auto &modelObj = std::get<ModelObject>(mainObject);
       lightOrbit.w = modelObj.vtArray->aabb.bounds.w;
