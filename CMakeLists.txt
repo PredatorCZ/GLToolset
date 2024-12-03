@@ -1,8 +1,9 @@
 cmake_minimum_required(VERSION 3.3)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 project(GLToolset VERSION 1.0)
-add_compile_options(-Wall -Wextra -Wl,--no-undefined)
+add_compile_options(-Wall -Wextra -Wl,--no-undefined -fsanitize=address,leak,undefined)
+add_link_options(-fsanitize=address,leak,undefined)
 
 set(TPD_PATH ${CMAKE_CURRENT_SOURCE_DIR}/3rd_party)
 set(BUILD_SHARED_LIBS ON)
@@ -19,36 +20,9 @@ set_target_properties(spike_cli PROPERTIES OUTPUT_NAME gl_toolset)
 
 add_subdirectory(${TPD_PATH}/imgui)
 add_subdirectory(${TPD_PATH}/simplecpp)
-add_subdirectory(${TPD_PATH}/ispctex EXCLUDE_FROM_ALL)
 
-build_target(
-  NAME
-  prime_converters
-  TYPE
-  OBJECT
-  SOURCES
-  ${TPD_PATH}/ispctex/ispc_texcomp.cpp
-  ${TPD_PATH}/stb/stb_image.c
-  ${TPD_PATH}/stb/stb_image_resize.c
-  ${TPD_PATH}/mikktspace/mikktspace.c
-  src/utils/md2.cpp
-  src/utils/image.cpp
-  INCLUDES
-  ${TPD_PATH}/mikktspace
-  ${ISPCTEX_DIR}
-  ${TPD_PATH}/ispctex
-  ${TPD_PATH}/stb
-  DEFINITIONS
-  STB_IMAGE_IMPLEMENTATION
-  STB_IMAGE_RESIZE_IMPLEMENTATION
-  LINKS
-  spike
-  PROPERTIES
-  POSITION_INDEPENDENT_CODE
-  ON
-)
-
-target_link_libraries(prime_converters ${ISPCTEX_DIR}/kernel_ispc_avx2.o ${ISPCTEX_DIR}/kernel_ispc_sse4.o ${ISPCTEX_DIR}/kernel_ispc.o)
+add_subdirectory(src/utils/converters)
+add_subdirectory(src/utils/reflect)
 
 build_target(
   NAME
@@ -68,17 +42,17 @@ build_target(
   src/graphics/program.cpp
   src/graphics/frame_buffer.cpp
   src/graphics/post_process.cpp
-  src/graphics/ui_frame.cpp
 
   src/utils/shader_preprocessor.cpp
-  src/utils/reflect.cpp
-  src/utils/reflect_graphics.cpp
-  src/utils/converters.cpp
+  src/utils/playground.cpp
+  src/utils/debug.cpp
   LINKS
   prime_converters
   ImGui
-  flatbuffers
-  simplecpp)
+  simplecpp
+)
+
+add_subdirectory(src/script)
 
 target_include_directories(prime PUBLIC src/shaders)
 
@@ -101,13 +75,4 @@ add_test(NAME test_curvebatch_avx COMMAND test_curvebatch_avx)
 #add_test(NAME test_curvebatch_sse COMMAND test_curvebatch_sse)
 
 
-build_target(
-  NAME
-  transpile
-  TYPE
-  APP
-  SOURCES
-  src/cshaders/transpile.cpp
-  LINKS
-  spike
-  simplecpp)
+add_subdirectory(tests)

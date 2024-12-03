@@ -6,6 +6,9 @@ build_target(
   TYPE
   OBJECT
   SOURCES
+  autogen.cpp
+  resource_compiler.cpp
+  resource_classes.cpp
   funcproto.cpp
   sqbase/sqvm.cpp
   sqbase/sqapi.cpp
