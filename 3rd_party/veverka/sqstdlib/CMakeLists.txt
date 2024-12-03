@@ -1,9 +1,6 @@
 set(SQSTDLIB_SRC sqstdaux.cpp
-                 sqstdblob.cpp
-                 sqstdio.cpp
                  sqstdmath.cpp
                  sqstdrex.cpp
-                 sqstdstream.cpp
                  sqstdstring.cpp
                  sqstdsystem.cpp)
 
@@ -12,7 +9,7 @@ if(NOT DISABLE_DYNAMIC)
   add_library(squirrel::sqstdlib ALIAS sqstdlib)
   set_property(TARGET sqstdlib PROPERTY EXPORT_NAME sqstdlib)
   set_property(TARGET sqstdlib PROPERTY OUTPUT_NAME ${SQSTDLIB_NAME})
-  target_link_libraries(sqstdlib squirrel)
+  target_link_libraries(sqstdlib squirrel spike-interface)
   if(NOT SQ_DISABLE_INSTALLER)
     install(TARGETS sqstdlib EXPORT squirrel
       RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Libraries
@@ -32,6 +29,7 @@ endif()
 if(NOT DISABLE_STATIC)
   add_library(sqstdlib_static STATIC ${SQSTDLIB_SRC})
   add_library(squirrel::sqstdlib_static ALIAS sqstdlib_static)
+  target_link_libraries(sqstdlib_static)
   set_property(TARGET sqstdlib_static PROPERTY EXPORT_NAME sqstdlib_static)
   if(NOT SQ_DISABLE_INSTALLER)
     install(TARGETS sqstdlib_static EXPORT squirrel ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Development)
