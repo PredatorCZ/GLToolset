@@ -49,7 +49,13 @@ void main() {
 #else
     vec3 normal = vec3(0, 0, 1);
 #endif
+
+#ifdef NUM_LIGHTS
     ComputeLights(GetTSNormal(normal.xyz), specLevel, specPower);
+#else
+    vec3 diffuse = vec3(0.);
+    vec3 specular = vec3(0.);
+#endif
     fragColor = vec4(diffuse + specular + ambientColor, 1.) * albedo;
 
 #ifdef PS_IN_GLOW

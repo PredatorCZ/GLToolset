@@ -44,7 +44,7 @@ Transforms transform;
 };
 
 vec3 GetSingleModelTransform(vec4 pos, int index) {
-  return DQTransformPoint(transform.transform.indexedModel[index], pos.xyz * transform.transform.indexedInflate[index]);
+  return DQTransformPoint(transform.indexedModel[index], pos.xyz * transform.indexedInflate[index]);
 }
 
 #endif
