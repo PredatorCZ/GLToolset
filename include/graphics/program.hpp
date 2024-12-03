@@ -6,6 +6,9 @@
 namespace prime::graphics {
 struct UniformBlockData;
 struct Program;
+struct VertexSource;
+struct FragmentSource;
+struct GeometrySource;
 
 struct ProgramIntrospection {
   struct Uniform {
@@ -27,3 +30,24 @@ const ProgramIntrospection &ProgramIntrospect(uint32 program);
 
 CLASS_EXT(prime::graphics::UniformBlockData);
 HASH_CLASS(prime::graphics::Program);
+HASH_CLASS(prime::graphics::VertexSource);
+HASH_CLASS(prime::graphics::FragmentSource);
+HASH_CLASS(prime::graphics::GeometrySource);
+
+template <>
+constexpr prime::common::ExtString
+prime::common::GetClassExtension<prime::graphics::VertexSource>() {
+  return {"vert"};
+}
+
+template <>
+constexpr prime::common::ExtString
+prime::common::GetClassExtension<prime::graphics::FragmentSource>() {
+  return {"frag"};
+}
+
+template <>
+constexpr prime::common::ExtString
+prime::common::GetClassExtension<prime::graphics::GeometrySource>() {
+  return {"geom"};
+}

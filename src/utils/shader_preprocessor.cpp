@@ -1,4 +1,5 @@
 #include "utils/shader_preprocessor.hpp"
+#include "graphics/program.hpp"
 #include "simplecpp.h"
 #include "spike/except.hpp"
 #include "spike/master_printer.hpp"
@@ -63,7 +64,7 @@ std::string PreProcess(common::ResourceHash object, simplecpp::DUI &dui) {
 
   const std::string includePath = dui.includePaths.front();
   REFERENCES[object.name].emplace(
-        common::MakeHash<graphics::StageObject>(object.name));
+      common::MakeHash<graphics::StageObject>(object.name));
 
   for (auto &[path_, data] : included) {
     std::string_view path(path_);
@@ -100,22 +101,28 @@ std::string PreProcess(common::ResourceHash object, simplecpp::DUI &dui) {
 
 std::string PreprocessShader(JenHash3 object, uint16 target,
                              std::span<std::string_view> definitions) {
-  const common::ResourceHash resource(common::MakeHash<char>(object));
+  common::ResourceHash resource(object);
   simplecpp::DUI dui;
   dui.defines.emplace_back("SHADER");
-  dui.includePaths.emplace_back(common::ResourceWorkingFolder(resource));
 
   switch (target) {
   case GL_VERTEX_SHADER:
     dui.defines.emplace_back("VERTEX");
-    dui.includes.emplace_back(common::ResourcePath("common/common.vert"));
+    dui.includes.emplace_back(
+        common::FindResource<graphics::VertexSource>("common/common")
+            .AbsPath());
+    resource.type = common::GetClassHash<graphics::VertexSource>();
     break;
   case GL_FRAGMENT_SHADER:
     dui.defines.emplace_back("FRAGMENT");
-    dui.includes.emplace_back(common::ResourcePath("common/common.frag"));
+    dui.includes.emplace_back(
+        common::FindResource<graphics::FragmentSource>("common/common")
+            .AbsPath());
+    resource.type = common::GetClassHash<graphics::FragmentSource>();
     break;
   case GL_GEOMETRY_SHADER:
     dui.defines.emplace_back("GEOMETRY");
+    resource.type = common::GetClassHash<graphics::GeometrySource>();
     break;
   default:
     throw std::runtime_error("Invalid target");
@@ -124,6 +131,8 @@ std::string PreprocessShader(JenHash3 object, uint16 target,
   for (auto d : definitions) {
     dui.defines.emplace_back(d);
   }
+
+  dui.includePaths.emplace_back(common::FindResource(resource).workingDir);
 
   return PreProcess(resource, dui);
 }
@@ -152,7 +161,8 @@ template <> class prime::common::InvokeGuard<prime::utils::ShaderPreprocessor> {
                   }
                 } else {
                   GetClassHandle(common::GetClassHash<graphics::StageObject>())
-                      .Update(common::MakeHash<graphics::StageObject>(hash.name));
+                      .Update(
+                          common::MakeHash<graphics::StageObject>(hash.name));
                 }
               },
       });

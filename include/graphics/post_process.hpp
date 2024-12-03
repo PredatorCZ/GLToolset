@@ -1,5 +1,6 @@
 #pragma once
 #include "frame_buffer.hpp"
+#include "spike/crypto/jenkinshash3.hpp"
 #include <map>
 #include <string>
 #include <vector>
@@ -34,6 +35,7 @@ struct PostProcess {
   void Resize(uint32 width_, uint32 height_);
 };
 
-PostProcessStage AddPostProcessStage(uint32 object, const FrameBuffer &canvas);
+PostProcessStage AddPostProcessStage(JenHash3 object,
+                                     const FrameBuffer &canvas);
 PostProcess CreatePostProcess(uint32 width, uint32 height);
 } // namespace prime::graphics

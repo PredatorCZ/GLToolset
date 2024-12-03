@@ -220,6 +220,9 @@ const ProgramIntrospection &ProgramIntrospect(uint32 program) {
 } // namespace prime::graphics
 
 REGISTER_CLASS(prime::graphics::UniformBlockData);
+REGISTER_CLASS(prime::graphics::VertexSource);
+REGISTER_CLASS(prime::graphics::FragmentSource);
+REGISTER_CLASS(prime::graphics::GeometrySource);
 
 template <> class prime::common::InvokeGuard<prime::graphics::StageObject> {
   static inline const bool data =

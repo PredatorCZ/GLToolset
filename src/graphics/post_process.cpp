@@ -1,5 +1,6 @@
 #include "graphics/post_process.hpp"
 #include "common/resource.hpp"
+#include "graphics/program.hpp"
 #include "spike/master_printer.hpp"
 #include <GL/glew.h>
 
@@ -32,7 +33,8 @@ static uint32 CompileStage(uint32 type, const char *data) {
 namespace prime::graphics {
 static uint32 VAOID = 0;
 
-PostProcessStage AddPostProcessStage(uint32 object, const FrameBuffer &canvas) {
+PostProcessStage AddPostProcessStage(JenHash3 object,
+                                     const FrameBuffer &canvas) {
   if (VAOID < 1) {
     glGenVertexArrays(1, &VAOID);
     glBindVertexArray(VAOID);
@@ -42,13 +44,14 @@ PostProcessStage AddPostProcessStage(uint32 object, const FrameBuffer &canvas) {
   retVal.program = glCreateProgram();
 
   {
-    auto &res =
-        common::LoadResource(common::MakeHash<char>("basics/viewport.vert"));
+    auto &res = common::LoadResource(
+        common::MakeHash<graphics::VertexSource>("basics/viewport"));
     uint32 vtStage = CompileStage(GL_VERTEX_SHADER, res.buffer.c_str());
     glAttachShader(retVal.program, vtStage);
   }
   {
-    auto &res = common::LoadResource(common::MakeHash<char>(object));
+    auto &res = common::LoadResource(
+        common::MakeHash<graphics::FragmentSource>(object));
     uint32 vtStage = CompileStage(GL_FRAGMENT_SHADER, res.buffer.c_str());
     glAttachShader(retVal.program, vtStage);
   }
