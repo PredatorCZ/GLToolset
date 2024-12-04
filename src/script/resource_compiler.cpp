@@ -1,6 +1,6 @@
 #include "common/resource.hpp"
 #include "resource_classes.hpp"
-#include "script/funcproto.hpp"
+#include "script/detail/funcproto.hpp"
 #include "spike/crypto/crc32.hpp"
 #include "spike/io/stat.hpp"
 #include "squirrel.h"

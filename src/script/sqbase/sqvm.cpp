@@ -1,7 +1,7 @@
 /*
     see copyright notice in squirrel.h
 */
-#include "script/funcproto.hpp"
+#include "script/detail/funcproto.hpp"
 
 #include "sqpcheader.h"
 #include <math.h>

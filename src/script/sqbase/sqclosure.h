@@ -2,7 +2,7 @@
 #ifndef _SQCLOSURE_H_
 #define _SQCLOSURE_H_
 #include "sqstate.h"
-#include "script/funcproto.hpp"
+#include "script/detail/funcproto.hpp"
 #include "sqfuncproto.h"
 #include "sqstring.h"
 #include "sqvm.h"

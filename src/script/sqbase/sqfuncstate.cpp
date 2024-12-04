@@ -11,7 +11,7 @@
 #include "sqfuncproto.h"
 
 #include "utils/playground.hpp"
-#include "script/funcproto.hpp"
+#include "script/detail/funcproto.hpp"
 
 #ifdef _DEBUG_DUMP
 SQInstructionDesc g_InstrDesc[]={

@@ -289,7 +289,7 @@ struct SQObjectPtr : public SQObject
         SQObjectType tOldType = _type;
         SQObjectValue unOldVal = _unVal;
         _type = OT_NULL;
-        _unVal.raw = (SQRawObjectVal)nullptr;
+        _unVal.raw = 0;
         __Release(tOldType ,unOldVal);
     }
     private:

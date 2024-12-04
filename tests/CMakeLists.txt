@@ -12,7 +12,6 @@ build_target(
   ../src/common/registry.cpp
   LINKS
   spike
-  squirrel_static
   prime_reflect
   prime_script
   prime_converters

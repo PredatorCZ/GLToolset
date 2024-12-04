@@ -1,3 +1,4 @@
+#pragma once
 
 #ifdef _SQ64
 

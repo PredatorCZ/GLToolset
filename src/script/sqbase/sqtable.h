@@ -10,8 +10,9 @@
 #include "sqstring.h"
 #include "sqstate.h"
 #include <cstring>
+#include <cstdint>
 
-#define hashptr(p)  ((SQHash)(((SQInteger)p) >> 3))
+#define hashptr(p)  ((SQHash)(((SQInteger)reinterpret_cast<std::uintptr_t>(p)) >> 3))
 
 inline SQHash HashObj(const SQObject &key)
 {

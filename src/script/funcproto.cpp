@@ -1,4 +1,4 @@
-#include "script/funcproto.hpp"
+#include "script/detail/funcproto.hpp"
 #include "common/resource.hpp"
 #include "sqbase/sqclosure.h"
 #include "sqbase/sqfuncproto.h"

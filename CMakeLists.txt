@@ -4,6 +4,7 @@ set(CMAKE_CXX_STANDARD 23)
 project(GLToolset VERSION 1.0)
 add_compile_options(-Wall -Wextra -Wl,--no-undefined -fsanitize=address,leak,undefined)
 add_link_options(-fsanitize=address,leak,undefined)
+add_definitions(-D_SQ64)
 
 set(TPD_PATH ${CMAKE_CURRENT_SOURCE_DIR}/3rd_party)
 set(BUILD_SHARED_LIBS ON)

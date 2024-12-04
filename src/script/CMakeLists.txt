@@ -1,5 +1,3 @@
-add_subdirectory(${TPD_PATH}/veverka ${CMAKE_CURRENT_BINARY_DIR}/veverka)
-
 build_target(
   NAME
   prime_script
@@ -22,7 +20,8 @@ build_target(
   sqbase/sqtable.cpp
   sqbase/sqlexer.cpp
   sqbase/sqmem.cpp
+  INCLUDES
+  ${CMAKE_SOURCE_DIR}/include/script/detail/sqbase
   LINKS
-  squirrel_static
   spike-interface
 )

@@ -13,7 +13,7 @@
 #include "sqvm.h"
 #include "sqtable.h"
 #include "sqfuncproto.h"
-#include "script/funcproto.hpp"
+#include "script/detail/funcproto.hpp"
 
 #define EXPR   1
 #define OBJECT 2
