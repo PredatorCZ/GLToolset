@@ -189,7 +189,7 @@ public:
             prime::script::BuildFuncProto(_fs);
             o = ptFunc;
 #ifdef _DEBUG_DUMP
-            _fs->Dump(_funcproto(o));
+            _fs->Dump(*_funcproto(o));
 #endif
         }
         else {
@@ -1590,7 +1590,7 @@ public:
 
         prime::script::BuildFuncProto(funcstate);
 #ifdef _DEBUG_DUMP
-        funcstate->Dump(func);
+        funcstate->Dump(&*funcstate->curProto);
 #endif
         _fs = currchunk;
         _fs->numFunctions++;

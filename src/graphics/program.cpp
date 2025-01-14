@@ -13,7 +13,8 @@ struct ShaderObject {
   std::vector<uint32> programs;
 };
 static std::map<uint32, GLShaderObject> shaderObjects;
-static std::map<JenHash3, std::set<prime::common::ResourceHash>> STAGE_REFERENCES;
+static std::map<JenHash3, std::set<prime::common::ResourceHash>>
+    STAGE_REFERENCES;
 
 static bool CompileShader(prime::graphics::StageObject &s,
                           std::span<std::string_view> defBuffer) {
@@ -239,7 +240,10 @@ template <> class prime::common::InvokeGuard<prime::graphics::StageObject> {
                 auto &stages = STAGE_REFERENCES.at(hash.name);
 
                 for (auto &stage : stages) {
-                  GetClassHandle(stage.type).Update(stage);
+                  GetClassHandle(stage.type)
+                      .Success([&](const ResourceHandle *item) {
+                        item->Update(stage);
+                      }).Unused();
                 }
               },
       });

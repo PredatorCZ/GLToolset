@@ -117,12 +117,11 @@ int AddClass(const prime::reflect::Class *cls) {
   return GetClasses().emplace(JenkinsHash_(cls->className), cls).second;
 }
 
-const Class *GetReflectedClass(uint32 hash) {
-  try {
-    return GetClasses().at(hash);
-  } catch (std::out_of_range &e) {
-    throw std::out_of_range("GetReflectedClass: Class is not registered!");
-  }
+common::Return<const Class *> GetReflectedClass(uint32 hash) {
+  return common::MapGetOr(GetClasses(), hash, []{
+    common::RuntimeError("Class is not registered!");
+    return nullptr;
+  });
 }
 
 std::map<uint32, const Enum *> &GetEnums() {

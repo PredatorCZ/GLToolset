@@ -22,6 +22,8 @@ build_target(
   sqbase/sqmem.cpp
   INCLUDES
   ${CMAKE_SOURCE_DIR}/include/script/detail/sqbase
+  DEFINITIONS
+  _DEBUG_DUMP
   LINKS
   spike-interface
 )

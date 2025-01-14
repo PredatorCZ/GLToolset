@@ -50,7 +50,7 @@ struct GLTEX : ReflectorBase<GLTEX> {
   RGType rgType = RGType::BC5;
   MonochromeType monochromeType = MonochromeType::BC4;
   NormalType normalType = NormalType::BC5S;
-  std::string normalMapPatterns;
+  std::string normalMapPatterns = "_normal$";
   std::string normalMapPatternsOld;
   int32 streamLimit[NUM_STREAMS]{128, 2048, 4096, -1};
   PathFilter normalExts;

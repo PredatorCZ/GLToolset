@@ -3,6 +3,7 @@
 #include "spike/crypto/jenkinshash3.hpp"
 #include "spike/except.hpp"
 #include <string_view>
+#include "error.hpp"
 
 #define HASH_CLASS(...)                                                        \
   template <> constexpr uint32 prime::common::GetClassHash<__VA_ARGS__>() {    \
@@ -154,7 +155,56 @@ template <class C> void ValidateClass(const C &item) {
   }
 }
 
-uint32 GetClassFromExtension(std::string_view ext);
+template <class M, class F>
+Return<typename M::mapped_type> MapGetOr(M &map, typename M::key_type &key,
+                                         F &&onNotFound) {
+  auto found = map.find(key);
+
+  if (found == map.end()) {
+    return {ERROR_KEY_NOT_FOUND_IN_MAP, typename M::mapped_type(onNotFound())};
+  }
+
+  return {NO_ERROR, found->second};
+}
+
+template <class M, class F>
+Return<std::add_pointer_t<typename M::mapped_type>>
+MapGetPtrOr(M &map, typename M::key_type &key, F &&onNotFound) {
+  auto found = map.find(key);
+
+  if (found == map.end()) {
+    if constexpr (std::is_same_v<std::invoke_result_t<F>, void>) {
+      onNotFound();
+      return {ERROR_KEY_NOT_FOUND_IN_MAP};
+    } else {
+      return {ERROR_KEY_NOT_FOUND_IN_MAP,
+              std::add_pointer_t<typename M::mapped_type>(onNotFound())};
+    }
+  }
+
+  return {NO_ERROR, &found->second};
+}
+
+template <class M, class F>
+Return<std::add_pointer_t<std::add_const_t<typename M::mapped_type>>>
+MapGetCPtrOr(const M &map, typename M::key_type &key, F &&onNotFound) {
+  auto found = map.find(key);
+
+  if (found == map.end()) {
+    if constexpr (std::is_same_v<std::invoke_result_t<F>, void>) {
+      onNotFound();
+      return {ERROR_KEY_NOT_FOUND_IN_MAP};
+    } else {
+      return {ERROR_KEY_NOT_FOUND_IN_MAP,
+              std::add_pointer_t<std::add_const_t<typename M::mapped_type>>(
+                  onNotFound())};
+    }
+  }
+
+  return {NO_ERROR, &found->second};
+}
+
+prime::common::Return<uint32> GetClassFromExtension(std::string_view ext);
 std::string_view GetExtentionFromHash(uint32 hash);
 
 namespace detail {

@@ -22,12 +22,12 @@ static ResourceData LoadResource(const std::string &path) {
   AFileInfo fileInfo(path);
   ResourceData data{};
   data.hash.name = JenkinsHash3_(fileInfo.GetFullPathNoExt());
-  try {
-    auto ext = fileInfo.GetExtension();
-    ext.remove_prefix(1);
-    data.hash.type = GetClassFromExtension({ext.data(), ext.size()});
-  } catch (...) {
-  }
+  std::string_view ext = fileInfo.GetExtension();
+  ext.remove_prefix(1);
+
+  GetClassFromExtension(ext)
+      .Success([&data](uint32 value) { data.hash.type = value; })
+      .Unused();
 
   auto Load = [&](const std::string &base) {
     BinReader rd(path.front() == '/' ? path : base + path);
@@ -82,19 +82,21 @@ void AddSimpleResource(ResourceData &&resource) {
   ResourceHash key(resource.hash);
 
   auto [item, _] = resources.insert_or_assign(
-      key,
-      std::pair<std::string, ResourceData>{{}, std::move(resource)});
+      key, std::pair<std::string, ResourceData>{{}, std::move(resource)});
   resourceFromPtr.emplace(item->second.second.buffer.data(),
                           &item->second.second);
 }
 
-void RegisterResource(std::string path) {
+Return<void> RegisterResource(std::string path) {
   AFileInfo finf(path);
   const uint32 name = JenkinsHash3_(finf.GetFullPathNoExt());
-  const uint32 type = GetClassFromExtension(finf.GetExtension().substr(1));
 
-  ResourceHash hash(name, type);
-  resources.insert({hash, {path, {hash, {}}}});
+  return GetClassFromExtension(finf.GetExtension().substr(1))
+      .Success([&](uint32 value) {
+        ResourceHash hash(name, value);
+        resources.insert({hash, {path, {hash, {}}}});
+      })
+      .Void();
 }
 
 void FreeResource(ResourceData &resource) {
@@ -129,8 +131,10 @@ bool AddResourceHandle(uint32 hash, ResourceHandle handle) {
 
 void *GetResourceHandle(ResourceData &data) { return data.buffer.data(); }
 
-const ResourceHandle &GetClassHandle(uint32 classHash) {
-  return Registry().at(classHash);
+Return<const ResourceHandle *> GetClassHandle(uint32 classHash) {
+  return MapGetCPtrOr(Registry(), classHash, [classHash] {
+    RUNTIME_ERROR("Cannot find class 0x%X in registry", classHash);
+  });
 }
 
 ResourceData &LoadResource(ResourceHash hash, bool reload) {
@@ -230,33 +234,35 @@ void PollUpdates() {
         static const auto &reg = Registry();
 
         if (foundDot != watchPath.npos) {
-          uint32 classHash = 0;
+          GetClassFromExtension(watchPath.substr(foundDot + 1))
+              .Either(
+                  [&](uint32 value) {
+                    if (reg.contains(value)) {
+                      const ResourceHandle &hdl = reg.at(value);
+                      if (hdl.Update) {
+                        hdl.Update(ResourceHash(
+                            JenkinsHash3_(watchPath.substr(0, foundDot)),
+                            value));
+                      }
+                      return;
+                    }
 
-          try {
-            GetClassFromExtension(watchPath.substr(foundDot + 1));
-          } catch (const std::out_of_range &) {
-          }
-
-          if (reg.contains(classHash)) {
-            const ResourceHandle &hdl = reg.at(classHash);
-            if (hdl.Update) {
-              hdl.Update(ResourceHash(
-                  JenkinsHash3_(watchPath.substr(0, foundDot)), classHash));
-            }
-          } else if (classHash > 0) {
-            for (auto &[c, hdl] : reg) {
-              if (hdl.Update) {
-                hdl.Update(ResourceHash(
-                    JenkinsHash3_(watchPath.substr(0, foundDot)), classHash));
-              }
-            }
-          } else {
-            for (auto &[c, hdl] : reg) {
-              if (hdl.Update) {
-                hdl.Update(ResourceHash(JenkinsHash3_(watchPath), 0));
-              }
-            }
-          }
+                    for (auto &[c, hdl] : reg) {
+                      if (hdl.Update) {
+                        hdl.Update(ResourceHash(
+                            JenkinsHash3_(watchPath.substr(0, foundDot)),
+                            value));
+                      }
+                    }
+                  },
+                  [&] {
+                    for (auto &[c, hdl] : reg) {
+                      if (hdl.Update) {
+                        hdl.Update(ResourceHash(JenkinsHash3_(watchPath), 0));
+                      }
+                    }
+                  })
+              .Unused();
         } else {
           for (auto &[c, hdl] : reg) {
             if (hdl.Update) {
@@ -308,12 +314,12 @@ void WatchTree(const std::string &path, std::string_view workDir) {
       WatchTree(absPath, workDir);
     } else {
       std::string localPath = absPath.substr(workDir.size());
-      //PrintInfo(localPath);
+      // PrintInfo(localPath);
       AFileInfo finf(localPath);
       const uint32 hash = JenkinsHash3_(finf.GetFullPathNoExt());
       std::string_view ext(finf.GetExtension());
       const uint32 type =
-          ext.empty() ? 0 : GetClassFromExtension(ext.substr(1));
+          ext.empty() ? 0 : GetClassFromExtension(ext.substr(1)).retVal;
       ResourcePath resPath{
           .hash = ResourceHash(hash, type),
           .localPath = localPath,
@@ -355,15 +361,17 @@ void ProjectDataFolder(std::string_view path) {
   for (std::string f : sc.Files()) {
     f.erase(0, projectCacheFolder.size());
     AFileInfo finf(f);
-    try {
-      std::string_view ext = finf.GetExtension();
-      ext.remove_prefix(1);
-      uint32 hash = GetClassFromExtension(ext);
-      ResourceHash rhash(JenkinsHash3_(finf.GetFullPathNoExt()), hash);
+    std::string_view ext = finf.GetExtension();
+    ext.remove_prefix(1);
 
-      resources.insert({rhash, {std::string(finf.GetFullPath()), {rhash, {}}}});
-    } catch (const std::out_of_range &) {
-    }
+    GetClassFromExtension(ext)
+        .Success([&](uint32 value) {
+          ResourceHash rhash(JenkinsHash3_(finf.GetFullPathNoExt()), value);
+
+          resources.insert(
+              {rhash, {std::string(finf.GetFullPath()), {rhash, {}}}});
+        })
+        .Unused();
   }
 }
 

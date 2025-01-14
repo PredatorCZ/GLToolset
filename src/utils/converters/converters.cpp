@@ -64,9 +64,16 @@ struct Context : AppContext {
 
   AppContextFoundStream FindFile(const std::string &rootFolder,
                                  const std::string &pattern) override {
+    if (!rootFolder.starts_with(prime::common::CacheDataFolder())) {
+      throw std::runtime_error("FindFile rootFolder is not cache folder");
+    }
+
+    std::string searchPath(path.workingDir);
+    searchPath.append(rootFolder.substr(prime::common::CacheDataFolder().size()));
+
     DirectoryScanner sc;
     sc.AddFilter(pattern);
-    sc.Scan(rootFolder);
+    sc.Scan(searchPath);
 
     if (sc.Files().empty()) {
       throw es::FileNotFoundError(pattern);
@@ -216,28 +223,12 @@ bool ConvertResource(const common::ResourcePath &path) {
     return false;
   }
 
-  /*DirectoryScanner ds;
-  AFileInfo pathInfo(path);
-  std::string filePattern("^");
-  filePattern.append(pathInfo.GetFilename());
-  ds.AddFilter(filePattern);
-  std::vector<std::string> viableFiles;
-
-  for (auto &d : common::workingDirs) {
-    std::string wdir(d);
-    wdir.append(pathInfo.GetFolder());
-    ds.Scan(wdir);
-    viableFiles.insert(viableFiles.end(), ds.Files().begin(), ds.Files().end());
-  }*/
-
   std::vector<Converter> viableConvertors;
 
   for (auto &c : found->second) {
-    // for (auto &f : viableFiles) {
     if (c.filter.IsFiltered(path.localPath)) {
       viableConvertors.emplace_back(c);
     }
-    //}
   }
 
   if (viableConvertors.empty()) {
@@ -246,8 +237,6 @@ bool ConvertResource(const common::ResourcePath &path) {
 
   Context ctx(path);
   viableConvertors.front().Func(&ctx);
-
-  int t = 0;
 
   return true;
 }

@@ -9,8 +9,11 @@ build_target(
   ESMODULE
   SOURCES
   make_glmod.cpp
+  ../src/utils/playground.cpp
+  ../src/utils/debug.cpp
   LINKS
   prime_converters
+  prime_reflect
   AUTHOR
   "Lukas Cone"
   DESCR

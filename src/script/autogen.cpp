@@ -94,7 +94,7 @@ void WalkClasses(std::set<const void *> &items, Linked &lnk,
 }
 
 const pr::Class *RequestClass(uint32 hash, const pr::Class *parent) {
-  const pr::Class *cls = pr::GetReflectedClass(hash);
+  const pr::Class *cls = pr::GetReflectedClass(hash).retVal;
   LINKED_CLASSES[cls].referencedBy.emplace_back(parent);
   LINKED_CLASSES[parent].references.emplace_back(cls);
   return cls;
@@ -245,7 +245,7 @@ void DumpClass(const pr::Class *cls) {
 
     case pr::Container::Pointer:
       str << "\"";
-      AppendClassName(str, pr::GetReflectedClass(type.hash)->className);
+      AppendClassName(str, pr::GetReflectedClass(type.hash).retVal->className);
       str << ":\"";
       break;
 
@@ -257,7 +257,7 @@ void DumpClass(const pr::Class *cls) {
       case pr::Type::ExternalResource:
         str << '"';
         if (type.hash) {
-          AppendClassName(str, pr::GetReflectedClass(type.hash)->className);
+          AppendClassName(str, pr::GetReflectedClass(type.hash).retVal->className);
         } else {
           str << "none";
         }

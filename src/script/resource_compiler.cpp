@@ -10,12 +10,15 @@
 #include <cstdio>
 #include <fstream>
 #include <glm/gtx/dual_quaternion.hpp>
+#include <variant>
 
 #include "sqbase/sqclosure.h"
 #include "sqbase/sqfuncproto.h"
 #include "sqbase/sqfuncstate.h"
 #include "sqbase/sqtable.h"
 #include "sqbase/sqvm.h"
+
+template <class C> using Return = prime::common::Return<C>;
 
 void printfunc(HSQUIRRELVM SQ_UNUSED_ARG(v), const SQChar *s, ...);
 
@@ -28,21 +31,20 @@ static std::string autogenFolder;
 static std::string cacheFolder;
 static std::string autogenCacheFolder;
 
-template <class C> SQInteger sq_cast(HSQUIRRELVM v, SQUserPointer tag, C &out) {
+template <class C>
+Return<void> sq_cast(HSQUIRRELVM v, SQUserPointer tag, C &out) {
   SQUserPointer self = nullptr;
   if (SQ_FAILED(sq_getinstanceup(v, -1, &self, tag, SQFalse))) {
-    return sq_throwerror(v, _SC("invalid type tag"));
+    return {RUNTIME_ERROR("Invalid instance type tag")};
   }
   if (self == nullptr) {
-    return sq_throwerror(v, _SC("invalid object"));
+    return {RUNTIME_ERROR("Instance has null userpointer")};
   }
 
   out = *static_cast<C *>(self);
 
-  return SQ_OK;
+  return {};
 }
-
-#include <variant>
 
 using Addr = prime::utils::PlayGround::Pointer<char>;
 
@@ -92,13 +94,13 @@ const char *GetObjectType(SQObjectType type) {
 
   return "unknown";
 }
-
-void CheckType(HSQUIRRELVM v, SQObjectType type) {
+inline Return<void> CheckType(HSQUIRRELVM v, SQObjectType type) {
   if (SQObjectType iType = sq_gettype(v, -1); iType != type) {
-    throw std::runtime_error("Unexpected type " +
-                             std::string(GetObjectType(iType)) + ", expected " +
-                             std::string(GetObjectType(type)));
+    return {RUNTIME_ERROR("Undefined type %s, expected %s",
+                          GetObjectType(iType), GetObjectType(type))};
   }
+
+  return {};
 }
 
 std::pair<std::string_view, std::string_view>
@@ -165,19 +167,19 @@ bool SetVariantClass(HSQUIRRELVM v, Addr addr_, uint32 hash,
     return true;
   }
 
-  const prime::reflect::Class *cls = prime::reflect::GetReflectedClass(hash);
-  auto splicClassName = SplitClassName(cls->className);
-  /*std::string tClassName(splicClassName.first);
-  tClassName.push_back('.');
-  tClassName.append(splicClassName.second);*/
+  return !prime::reflect::GetReflectedClass(hash)
+              .Success([&](const prime::reflect::Class *cls) {
+                auto splicClassName = SplitClassName(cls->className);
+                /*std::string tClassName(splicClassName.first);
+                tClassName.push_back('.');
+                tClassName.append(splicClassName.second);*/
 
-  if (splicClassName.second == className) {
-    cls->construct(addr);
-    SetClass(cls, addr_, v, pg, dbg);
-    return true;
-  }
-
-  return false;
+                if (splicClassName.second == className) {
+                  cls->construct(addr);
+                  SetClass(cls, addr_, v, pg, dbg);
+                }
+              })
+              .status;
 }
 
 void SetVariant(HSQUIRRELVM v, const prime::reflect::DataType *type,
@@ -260,14 +262,14 @@ void SetVariant(HSQUIRRELVM v, const prime::reflect::DataType *type,
                            " is not part of variant.");
 }
 
-static prime::common::ResourcePath GetResourcePath(std::string_view path,
-                                                   uint32 hash) {
+static prime::common::Return<prime::common::ResourcePath>
+GetResourcePath(std::string_view path, uint32 hash) {
   const size_t found = path.find(':');
 
   if (found == path.npos) {
     if (hash == 0) {
-      throw std::runtime_error("Expected <class>:<path> but got: " +
-                               std::string(path));
+      return {RUNTIME_ERROR("Expected <class>:<path> but got: %s",
+                            std::string(path).c_str())};
     }
 
     prime::common::ResourcePath retVal{
@@ -275,7 +277,7 @@ static prime::common::ResourcePath GetResourcePath(std::string_view path,
         .localPath = std::string(path),
     };
 
-    return retVal;
+    return {NO_ERROR, retVal};
   }
 
   std::string className("prime::");
@@ -289,147 +291,147 @@ static prime::common::ResourcePath GetResourcePath(std::string_view path,
 
   const uint32 classHash = JenkinsHash_(className);
 
-  try {
-    prime::common::GetClassHandle(classHash);
-  } catch (...) {
-    throw std::runtime_error("Invalid class name: " + std::string(className));
-  }
+  return prime::common::GetClassHandle(classHash).Either(
+      [&] {
+        if (hash) {
+          if (hash != classHash) {
+            return prime::reflect::GetReflectedClass(hash).Either(
+                [&](const prime::reflect::Class *cls) {
+                  RUNTIME_ERROR("Expected class: %s but got %s", cls->className,
+                                className.c_str());
+                  return prime::common::ResourcePath{};
+                },
+                [&] {
+                  RUNTIME_ERROR("Class name %s is not expected",
+                                className.c_str());
+                  return prime::common::ResourcePath{};
+                });
+          }
+        }
 
-  if (hash) {
-    if (hash != classHash) {
-      const prime::reflect::Class *cls =
-          prime::reflect::GetReflectedClass(hash);
-      if (cls) {
-        throw std::runtime_error(
-            "Expected class: " + std::string(cls->className) +
-            " but got: " + className);
-      }
-      throw std::runtime_error("Class name: " + std::string(className) +
-                               " is not expected");
-    }
-  } else {
-    if (!prime::reflect::GetReflectedClass(hash)) {
-      throw std::runtime_error("Class name: " + std::string(className) +
-                               " is not expected");
-    }
-  }
+        return prime::reflect::GetReflectedClass(hash).Either(
+            [&] {
+              std::string_view pathPart(path.substr(found + 1));
 
-  std::string_view pathPart(path.substr(found + 1));
+              prime::common::ResourcePath retVal{
+                  .hash = prime::common::ResourceHash(JenkinsHash3_(pathPart),
+                                                      classHash),
+                  .localPath = std::string(pathPart),
+              };
 
-  prime::common::ResourcePath retVal{
-      .hash = prime::common::ResourceHash(JenkinsHash3_(pathPart), classHash),
-      .localPath = std::string(pathPart),
-  };
-
-  return retVal;
+              return retVal;
+            },
+            [&] {
+              RUNTIME_ERROR("Class name %s is not expected", className.c_str());
+              return prime::common::ResourcePath{};
+            });
+      },
+      [&] {
+        RUNTIME_ERROR("Invalid class name: %s", className.c_str());
+        return prime::common::ResourcePath{};
+      });
 }
 
-void SetPrimitive(const prime::reflect::DataType *types, uint32 nTypes,
-                  uint32 cType, Addr addr_, HSQUIRRELVM v,
-                  prime::utils::PlayGround &pg,
-                  prime::utils::ResourceDebugPlayground &dbg) {
+Return<void> SetPrimitive(const prime::reflect::DataType *types, uint32 nTypes,
+                          uint32 cType, Addr addr_, HSQUIRRELVM v,
+                          prime::utils::PlayGround &pg,
+                          prime::utils::ResourceDebugPlayground &dbg) {
   namespace pr = prime::reflect;
   StackGuard g(v);
   void *addr = addr_.operator->();
   switch (types[cType].type) {
-  case pr::Type::Bool: {
-    SQBool sBool;
-    sq_getbool(v, -1, &sBool);
-    CheckType(v, OT_BOOL);
-    // sq_poptop(v);
-    *static_cast<bool *>(addr) = sBool;
-    break;
-  }
+  case pr::Type::Bool:
+    return CheckType(v, OT_BOOL).Success([&] {
+      SQBool sBool;
+      sq_getbool(v, -1, &sBool);
+      // sq_poptop(v);
+      *static_cast<bool *>(addr) = sBool;
+    });
   case pr::Type::Int:
   case pr::Type::Uint:
   case pr::Type::Enum: {
-    SQInteger sInt;
-    sq_getinteger(v, -1, &sInt);
-    CheckType(v, OT_INTEGER);
-    // sq_poptop(v);
+    return CheckType(v, OT_INTEGER).Success([&] {
+      SQInteger sInt;
+      sq_getinteger(v, -1, &sInt);
+      // sq_poptop(v);
 
-    // todo check limits
-    memcpy(addr, &sInt, types[cType].size);
-    break;
+      // todo check limits
+      memcpy(addr, &sInt, types[cType].size);
+    });
   }
   case pr::Type::Float: {
-    SQFloat sFloat;
-    sq_getfloat(v, -1, &sFloat);
-    CheckType(v, OT_FLOAT);
-    // sq_poptop(v);
-    if (types[cType].size == 4) {
-      *static_cast<float *>(addr) = sFloat;
-    } else {
-      *static_cast<double *>(addr) = sFloat;
-    }
-    break;
+    return CheckType(v, OT_FLOAT).Success([&] {
+      SQFloat sFloat;
+      sq_getfloat(v, -1, &sFloat);
+      // sq_poptop(v);
+      if (types[cType].size == 4) {
+        *static_cast<float *>(addr) = sFloat;
+      } else {
+        *static_cast<double *>(addr) = sFloat;
+      }
+    });
   }
 
   case pr::Type::Color: {
-    sq_cast(v, SQCOLOR_TAG, *static_cast<Color *>(addr));
-    break;
+    return sq_cast(v, SQCOLOR_TAG, *static_cast<Color *>(addr));
   }
   case pr::Type::DualQuat: {
-    sq_cast(v, SQTRANSFORM_TAG, *static_cast<glm::dualquat *>(addr));
-    break;
+    return sq_cast(v, SQTRANSFORM_TAG, *static_cast<glm::dualquat *>(addr));
   }
   case pr::Type::Quat: {
-    sq_cast(v, SQROTATION_TAG, *static_cast<glm::quat *>(addr));
-    break;
+    return sq_cast(v, SQROTATION_TAG, *static_cast<glm::quat *>(addr));
   }
   case pr::Type::Vec2: {
-    sq_cast(v, SQVEC2_TAG, *static_cast<glm::vec2 *>(addr));
-    break;
+    return sq_cast(v, SQVEC2_TAG, *static_cast<glm::vec2 *>(addr));
   }
   case pr::Type::Vec3: {
-    sq_cast(v, SQVEC3_TAG, *static_cast<glm::vec3 *>(addr));
-    break;
+    return sq_cast(v, SQVEC3_TAG, *static_cast<glm::vec3 *>(addr));
   }
   case pr::Type::Vec4: {
-    sq_cast(v, SQVEC4_TAG, *static_cast<glm::vec4 *>(addr));
-    break;
+    return sq_cast(v, SQVEC4_TAG, *static_cast<glm::vec4 *>(addr));
   }
   case pr::Type::ExternalResource: {
-    const SQChar *path;
-    sq_getstring(v, -1, &path);
-    CheckType(v, OT_STRING);
-    const uint32 hash = types[cType].hash;
-    std::string_view swPath(path);
+    return CheckType(v, OT_STRING).Success([&] {
+      const SQChar *path;
+      sq_getstring(v, -1, &path);
 
-    if (types[cType].size == sizeof(JenHash3)) {
-      *static_cast<JenHash3 *>(addr) =
-          dbg.AddRef(swPath, types[cType].hash).name;
-      break;
-    }
+      const uint32 hash = types[cType].hash;
+      std::string_view swPath(path);
 
-    const prime::common::ResourcePath rPath = GetResourcePath(swPath, hash);
+      if (types[cType].size == sizeof(JenHash3)) {
+        *static_cast<JenHash3 *>(addr) =
+            dbg.AddRef(swPath, types[cType].hash).name;
+        return NO_ERROR;
+      }
 
-    if (hash) {
-      *static_cast<JenHash3 *>(addr) = dbg.AddRef(rPath.localPath, hash).name;
-    } else {
-      prime::common::ResourceHash hValue(
-          dbg.AddRef(rPath.localPath, rPath.hash.type));
-      *static_cast<prime::common::ResourceHash *>(addr) = hValue;
-    }
-
-    break;
+      return GetResourcePath(swPath, hash)
+          .Success([&](prime::common::ResourcePath &rPath) {
+            if (hash) {
+              *static_cast<JenHash3 *>(addr) =
+                  dbg.AddRef(rPath.localPath, hash).name;
+            } else {
+              prime::common::ResourceHash hValue(
+                  dbg.AddRef(rPath.localPath, rPath.hash.type));
+              *static_cast<prime::common::ResourceHash *>(addr) = hValue;
+            }
+          })
+          .status;
+    });
   }
 
-  case pr::Type::HString: {
-    const SQChar *str;
-    sq_getstring(v, -1, &str);
-    CheckType(v, OT_STRING);
-    *static_cast<JenHash *>(addr) = dbg.AddString(str);
-    break;
-  }
+  case pr::Type::HString:
+    return CheckType(v, OT_STRING).Success([&] {
+      const SQChar *str;
+      sq_getstring(v, -1, &str);
+      *static_cast<JenHash *>(addr) = dbg.AddString(str);
+    });
 
-  case pr::Type::String: {
-    const SQChar *str;
-    sq_getstring(v, -1, &str);
-    CheckType(v, OT_STRING);
-    pg.NewString(*static_cast<prime::common::String *>(addr), str);
-    break;
-  }
+  case pr::Type::String:
+    return CheckType(v, OT_STRING).Success([&] {
+      const SQChar *str;
+      sq_getstring(v, -1, &str);
+      pg.NewString(*static_cast<prime::common::String *>(addr), str);
+    });
 
   case pr::Type::Flags: {
     const pr::Enum *enm = pr::GetReflectedEnum(types[cType].hash);
@@ -474,22 +476,24 @@ void SetPrimitive(const prime::reflect::DataType *types, uint32 nTypes,
     break;
   }
 
-  case pr::Type::Class: {
-    const SQChar *className;
-    CheckType(v, OT_INSTANCE);
-    sq_getclass(v, -1);
-    sq_getclassname(v, &className);
-    sq_poptop(v);
-    const pr::Class *cls = pr::GetReflectedClass(types[cType].hash);
-    if (!cls) {
-      throw std::runtime_error("Class name: " + std::string(className) +
-                               " is not expected");
-    }
+  case pr::Type::Class:
+    return CheckType(v, OT_INSTANCE).Success([&] {
+      const SQChar *className;
+      sq_getclass(v, -1);
+      sq_getclassname(v, &className);
+      sq_poptop(v);
 
-    cls->construct(addr);
-    SetClass(cls, addr_, v, pg, dbg);
-    break;
-  }
+      return pr::GetReflectedClass(types[cType].hash)
+          .Either(
+              [&](const pr::Class *cls) {
+                cls->construct(addr);
+                SetClass(cls, addr_, v, pg, dbg);
+              },
+              [&] {
+                RUNTIME_ERROR("Class name: %s is not expected", className);
+              })
+          .status;
+    });
 
   case pr::Type::Variant: {
     SetVariant(v, types, types + 1, addr_, pg, dbg);
@@ -562,13 +566,13 @@ void SetObject(const prime::reflect::DataType *types, uint32 nTypes,
     sq_getstring(v, -1, &path);
     CheckType(v, OT_STRING);
     const uint32 hash = types[cType].hash;
-    const prime::common::ResourcePath rPath = GetResourcePath(path, hash);
+    /*const prime::common::ResourcePath rPath = GetResourcePath(path, hash);
 
     if (rPath.localPath.size()) {
       auto &ptr =
           *reinterpret_cast<prime::common::Pointer<char> *>(addr.operator->());
       ptr = dbg.AddRef(rPath.localPath, hash);
-    }
+    }*/
 
     break;
   }
@@ -604,7 +608,7 @@ static SQInteger AddResource(HSQUIRRELVM v) {
   std::string oPath(path);
   oPath.push_back('.');
 
-  const prime::reflect::Class *cls =
+  /*const prime::reflect::Class *cls =
       prime::reflect::GetReflectedClass(classHash);
   oPath.append(cls->extension);
   prime::common::RegisterResource(oPath);
@@ -645,7 +649,7 @@ static SQInteger AddResource(HSQUIRRELVM v) {
     oPath.append(cls->extension);
     ostr.open(oPath, std::ios::binary | std::ios::out);
   }
-  ostr.write(built.data(), built.size());
+  ostr.write(built.data(), built.size());*/
 
   return 0;
 }
@@ -764,7 +768,6 @@ namespace prime::script {
 void CompileScript(const common::ResourcePath &path) {
   autogenFolder = prime::common::ProjectDataFolder() + "autogenerated/";
   cacheFolder = prime::common::ProjectDataFolder() + "cache/";
-  es::mkdir(cacheFolder);
   autogenCacheFolder = cacheFolder + "autogenerated/";
   es::mkdir(autogenCacheFolder);
 

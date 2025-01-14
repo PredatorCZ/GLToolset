@@ -160,6 +160,13 @@ void GLAPIENTRY MessageCallback(GLenum source, GLenum type, GLuint id,
 }
 
 int main(int, char *argv[]) {
+  long seg, addr;
+  char name[0x1000];
+
+  auto ret = sscanf(" 002:B985D0 MtCollada::DTI::`vftable'", " %04lX : %08lX %[^\t\n ;]", &seg, &addr, name);
+
+
+
   es::print::AddPrinterFunction(es::Print);
 
   glfwSetErrorCallback(
@@ -217,7 +224,7 @@ int main(int, char *argv[]) {
 
   pc::AddWorkingFolder("/home/lukas/github/gltoolset/src/shaders/");
   pc::AddWorkingFolder("/home/lukas/github/gltoolset/gltex_view/res/");
-  pc::ProjectDataFolder("/home/lukas/Downloads/alienarena/");
+  pc::ProjectDataFolder(argv[1]);
 
   MainUBType *mainUBData = [&] {
     pc::ResourceData mainUniform;
@@ -323,7 +330,8 @@ int main(int, char *argv[]) {
 
     std::string_view ext = assInf.GetExtension().substr(1);
 
-    uint32 classId = pc::GetClassFromExtension(ext);
+    uint32 classId = pc::GetClassFromExtension(ext).ValueOr(
+        [] { throw std::runtime_error("Invalid asset type"); });
 
     if (classId == pc::GetClassHash<pg::ModelSingle>() || ext == "md2") {
       mainObject = BuildFromModel(std::string(assInf.GetFullPathNoExt()));
@@ -348,12 +356,10 @@ int main(int, char *argv[]) {
       lightOrbit.w = 1.5;
       isModel = false;
       lightScale = 0.1;
-    } else {
-      throw std::runtime_error("Invalid asset type");
     }
   };
 
-  LoadAsset(argv[1]);
+  LoadAsset(argv[2]);
 
   /*std::thread streamer([&, &texture = texture] {
     glfwMakeContextCurrent(sharedWindow);
@@ -458,7 +464,7 @@ int main(int, char *argv[]) {
         if (ImGui::BeginMenu("File")) {
           if (ImGui::MenuItem("Open", "Ctrl+O")) {
             ImGuiFileDialog::Instance()->OpenDialog(
-                "ChooseFileDlgKey", "Choose File", ".gtte,.gmse", argv[1]);
+                "ChooseFileDlgKey", "Choose File", ".md2", argv[1]);
           }
           ImGui::EndMenu();
         }
@@ -471,7 +477,9 @@ int main(int, char *argv[]) {
         if (ImGuiFileDialog::Instance()->IsOk()) {
           std::string filePathName =
               ImGuiFileDialog::Instance()->GetFilePathName();
-          LoadAsset(ImGuiFileDialog::Instance()->GetFilePathName());
+          if (filePathName.starts_with(argv[1])) {
+            LoadAsset(filePathName.substr(strlen(argv[1])));
+          }
         }
         ImGuiFileDialog::Instance()->Close();
       }

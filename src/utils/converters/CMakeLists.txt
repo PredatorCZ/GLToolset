@@ -29,4 +29,5 @@ build_target(
   ON
 )
 
+target_compile_options(prime_converters PRIVATE -fno-sanitize=all)
 target_link_libraries(prime_converters ${ISPCTEX_DIR}/kernel_ispc_avx2.o ${ISPCTEX_DIR}/kernel_ispc_sse4.o ${ISPCTEX_DIR}/kernel_ispc.o)

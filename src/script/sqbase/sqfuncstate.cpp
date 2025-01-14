@@ -118,14 +118,13 @@ void SQFuncState::Error(const SQChar *err)
 }
 
 #ifdef _DEBUG_DUMP
-void SQFuncState::Dump(SQFunctionProto *func)
+void SQFuncState::Dump(prime::script::FuncProto *func)
 {
     SQUnsignedInteger n=0,i;
-    SQInteger si;
     scprintf(_SC("SQInstruction sizeof %d\n"),(SQInt32)sizeof(SQInstruction));
     scprintf(_SC("SQObject sizeof %d\n"), (SQInt32)sizeof(SQObject));
     scprintf(_SC("--------------------------------------------------------------------\n"));
-    scprintf(_SC("*****FUNCTION [%s]\n"),sq_type(func->_name)==OT_STRING?_stringval(func->_name):_SC("unknown"));
+    scprintf(_SC("*****FUNCTION [%s]\n"),func->name.raw());
     scprintf(_SC("-----LITERALS\n"));
     SQObjectPtr refidx,key,val;
     SQInteger idx;
@@ -152,9 +151,8 @@ void SQFuncState::Dump(SQFunctionProto *func)
         n++;
     }
     scprintf(_SC("-----LOCALS\n"));
-    for(si=0;si<func->_nlocalvarinfos;si++){
-        SQLocalVarInfo lvi=func->_localvarinfos[si];
-        scprintf(_SC("[%d] %s \t%d %d\n"), (SQInt32)lvi._pos,_stringval(lvi._name), (SQInt32)lvi._start_op, (SQInt32)lvi._end_op);
+    for(auto &lvi : func->localVars){
+        scprintf(_SC("[%d] %s \t%d %d\n"), (SQInt32)lvi.pos,lvi.name.raw(), (SQInt32)lvi.startOp, (SQInt32)lvi.endOp);
         n++;
     }
     scprintf(_SC("-----LINE INFO\n"));
@@ -212,7 +210,7 @@ void SQFuncState::Dump(SQFunctionProto *func)
         n++;
     }
     scprintf(_SC("-----\n"));
-    scprintf(_SC("stack size[%d]\n"), (SQInt32)func->_stacksize);
+    scprintf(_SC("stack size[%d]\n"), (SQInt32)func->stackSize);
     scprintf(_SC("--------------------------------------------------------------------\n\n"));
 }
 #endif
