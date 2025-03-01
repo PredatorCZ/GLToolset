@@ -48,9 +48,9 @@ Return<void> sq_cast(HSQUIRRELVM v, SQUserPointer tag, C &out) {
 
 using Addr = prime::utils::PlayGround::Pointer<char>;
 
-void SetClass(const prime::reflect::Class *cls, Addr addr, HSQUIRRELVM v,
-              prime::utils::PlayGround &pg,
-              prime::utils::ResourceDebugPlayground &dbg);
+Return<void> SetClass(const prime::reflect::Class *cls, Addr addr,
+                      HSQUIRRELVM v, prime::utils::PlayGround &pg,
+                      prime::utils::ResourceDebugPlayground &dbg);
 
 const char *GetObjectType(SQObjectType type) {
   switch (type) {
@@ -332,6 +332,50 @@ GetResourcePath(std::string_view path, uint32 hash) {
       });
 }
 
+Return<void> SetFlags(HSQUIRRELVM v, const prime::reflect::Enum *enm,
+                      void *addr) {
+  sq_get(v, -1);
+  Return<void> isTable = CheckType(v, OT_TABLE);
+
+  if (isTable.status) {
+    sq_pop(v, 1);
+    return isTable;
+  }
+
+  sq_pushnull(v);
+  while (SQ_SUCCEEDED(sq_next(v, -2))) {
+    const SQChar *key;
+    SQBool value;
+    sq_getstring(v, -2, &key);
+    sq_getbool(v, -1, &value);
+    CheckType(v, OT_BOOL).Unused();
+    sq_pop(v, 2);
+
+    std::string_view sw(key);
+    bool found = false;
+
+    for (uint32 i = 0; i < enm->nMembers; i++) {
+      if (sw == enm->names[i]) {
+        found = true;
+        uint64 value = 0;
+        const void *valuePtr =
+            static_cast<const char *>(enm->values) + i * enm->size;
+        memcpy(&value, valuePtr, enm->size);
+        *static_cast<uint64 *>(addr) |= uint64(1) << value;
+        break;
+      }
+    }
+
+    if (!found) {
+      sq_pop(v, 2);
+      return {RUNTIME_ERROR("Enum value: %s not found for enum: %s", key,
+                            enm->name)};
+    }
+  }
+  sq_pop(v, 2);
+  return {NO_ERROR};
+}
+
 Return<void> SetPrimitive(const prime::reflect::DataType *types, uint32 nTypes,
                           uint32 cType, Addr addr_, HSQUIRRELVM v,
                           prime::utils::PlayGround &pg,
@@ -434,46 +478,8 @@ Return<void> SetPrimitive(const prime::reflect::DataType *types, uint32 nTypes,
     });
 
   case pr::Type::Flags: {
-    const pr::Enum *enm = pr::GetReflectedEnum(types[cType].hash);
-
-    if (!enm) {
-      throw std::logic_error("Forgot to reflect an enum");
-    }
-
-    sq_get(v, -1);
-    CheckType(v, OT_TABLE);
-    sq_pushnull(v);
-    while (SQ_SUCCEEDED(sq_next(v, -2))) {
-      const SQChar *key;
-      SQBool value;
-      sq_getstring(v, -2, &key);
-      sq_getbool(v, -1, &value);
-      CheckType(v, OT_BOOL);
-      sq_pop(v, 2);
-
-      std::string_view sw(key);
-      bool found = false;
-
-      for (uint32 i = 0; i < enm->nMembers; i++) {
-        if (sw == enm->names[i]) {
-          found = true;
-          uint64 value = 0;
-          const void *valuePtr =
-              static_cast<const char *>(enm->values) + i * enm->size;
-          memcpy(&value, valuePtr, enm->size);
-          *static_cast<uint64 *>(addr) |= uint64(1) << value;
-          break;
-        }
-      }
-
-      if (!found) {
-        throw std::runtime_error(
-            "Enum value: " + std::string(sw) +
-            " not found for enum: " + std::string(enm->name));
-      }
-    }
-    sq_pop(v, 2);
-    break;
+    return pr::GetReflectedEnum(types[cType].hash)
+        .Success([&](const pr::Enum *enm) { return SetFlags(v, enm, addr); });
   }
 
   case pr::Type::Class:
@@ -492,100 +498,129 @@ Return<void> SetPrimitive(const prime::reflect::DataType *types, uint32 nTypes,
               [&] {
                 RUNTIME_ERROR("Class name: %s is not expected", className);
               })
-          .status;
+          .Void();
     });
 
   case pr::Type::Variant: {
     SetVariant(v, types, types + 1, addr_, pg, dbg);
     break;
   }
+
+  case pr::Type::None:
+    break;
   }
+
+  return {NO_ERROR};
 }
 
-void SetObject(const prime::reflect::DataType *types, uint32 nTypes,
-               uint32 cType, Addr addr, HSQUIRRELVM v,
-               prime::utils::PlayGround &pg,
-               prime::utils::ResourceDebugPlayground &dbg) {
+Return<void> SetObject(const prime::reflect::DataType *types, uint32 nTypes,
+                       uint32 cType, Addr addr, HSQUIRRELVM v,
+                       prime::utils::PlayGround &pg,
+                       prime::utils::ResourceDebugPlayground &dbg);
+
+Return<void> SetArray(const prime::reflect::DataType *types, uint32 nTypes,
+                      uint32 cType, Addr addr, HSQUIRRELVM v,
+                      prime::utils::PlayGround &pg,
+                      prime::utils::ResourceDebugPlayground &dbg) {
+  namespace pr = prime::reflect;
+  sq_pushnull(v);
+  Return<void> retVal;
+
+  if (types[cType].count == 2) {
+    while (SQ_SUCCEEDED(sq_next(v, -2))) {
+      const uint32 nType =
+          types[cType].type == pr::Type::Subtype ? cType + 1 : cType;
+      auto ptr = pg.ArrayEmplaceBytes(
+          *reinterpret_cast<prime::common::LocalArray16<char> *>(
+              addr.operator->()),
+          types[nType].size, types[nType].alignment);
+
+      if (types[cType].type == pr::Type::Subtype) {
+        retVal |= SetObject(types, nTypes, nType, ptr, v, pg, dbg);
+      } else {
+        retVal |= SetPrimitive(types, nTypes, nType, ptr, v, pg, dbg);
+      }
+      sq_pop(v, 2);
+    }
+  } else {
+    while (SQ_SUCCEEDED(sq_next(v, -2))) {
+      const uint32 nType =
+          types[cType].type == pr::Type::Subtype ? cType + 1 : cType;
+      auto ptr = pg.ArrayEmplaceBytes(
+          *reinterpret_cast<prime::common::LocalArray32<char> *>(
+              addr.operator->()),
+          types[nType].size, types[nType].alignment);
+
+      if (types[cType].type == pr::Type::Subtype) {
+        retVal |= SetObject(types, nTypes, nType, ptr, v, pg, dbg);
+      } else {
+        retVal |= SetPrimitive(types, nTypes, nType, ptr, v, pg, dbg);
+      }
+      sq_pop(v, 2);
+    }
+  }
+
+  sq_poptop(v);
+  return retVal;
+}
+
+Return<void> SetObject(const prime::reflect::DataType *types, uint32 nTypes,
+                       uint32 cType, Addr addr, HSQUIRRELVM v,
+                       prime::utils::PlayGround &pg,
+                       prime::utils::ResourceDebugPlayground &dbg) {
   namespace pr = prime::reflect;
   StackGuard g(v);
   switch (types[cType].container) {
   case pr::Container::None:
-    SetPrimitive(types, nTypes, cType, addr, v, pg, dbg);
-    break;
+    return SetPrimitive(types, nTypes, cType, addr, v, pg, dbg);
   case pr::Container::Array:
     /*case pr::Container::InlineArray: */ {
       // sq_get(v, -1);
-      CheckType(v, OT_ARRAY);
-      sq_pushnull(v);
+      return CheckType(v, OT_ARRAY).Success([&] {
+        return SetArray(types, nTypes, cType, addr, v, pg, dbg);
+      });
 
-      if (types[cType].count == 2) {
-        while (SQ_SUCCEEDED(sq_next(v, -2))) {
-          const uint32 nType =
-              types[cType].type == pr::Type::Subtype ? cType + 1 : cType;
-          auto ptr = pg.ArrayEmplaceBytes(
-              *reinterpret_cast<prime::common::LocalArray16<char> *>(
-                  addr.operator->()),
-              types[nType].size, types[nType].alignment);
-
-          if (types[cType].type == pr::Type::Subtype) {
-            SetObject(types, nTypes, nType, ptr, v, pg, dbg);
-          } else {
-            SetPrimitive(types, nTypes, nType, ptr, v, pg, dbg);
-          }
-          sq_pop(v, 2);
-        }
-      } else {
-        while (SQ_SUCCEEDED(sq_next(v, -2))) {
-          const uint32 nType =
-              types[cType].type == pr::Type::Subtype ? cType + 1 : cType;
-          auto ptr = pg.ArrayEmplaceBytes(
-              *reinterpret_cast<prime::common::LocalArray32<char> *>(
-                  addr.operator->()),
-              types[nType].size, types[nType].alignment);
-
-          if (types[cType].type == pr::Type::Subtype) {
-            SetObject(types, nTypes, nType, ptr, v, pg, dbg);
-          } else {
-            SetPrimitive(types, nTypes, nType, ptr, v, pg, dbg);
-          }
-          sq_pop(v, 2);
-        }
-      }
-
-      sq_poptop(v);
       break;
     }
 
   case pr::Container::Pointer: {
-    if (types[cType].type != pr::Type::ExternalResource) {
-      throw std::runtime_error(
-          "Only ExternalResource for Container::Pointer is supported.");
-    }
+    return CheckType(v, OT_STRING).Success([&] {
+      if (types[cType].type != pr::Type::ExternalResource) {
+        return RUNTIME_ERROR(
+            "Only ExternalResource for Container::Pointer is supported.");
+      }
 
-    const SQChar *path;
-    sq_getstring(v, -1, &path);
-    CheckType(v, OT_STRING);
-    const uint32 hash = types[cType].hash;
-    /*const prime::common::ResourcePath rPath = GetResourcePath(path, hash);
+      const SQChar *path;
+      sq_getstring(v, -1, &path);
+      const uint32 hash = types[cType].hash;
 
-    if (rPath.localPath.size()) {
-      auto &ptr =
-          *reinterpret_cast<prime::common::Pointer<char> *>(addr.operator->());
-      ptr = dbg.AddRef(rPath.localPath, hash);
-    }*/
+      return GetResourcePath(path, hash)
+          .Success([&](prime::common::ResourcePath rPath) {
+            if (rPath.localPath.size()) {
+              auto &ptr = *reinterpret_cast<prime::common::Pointer<char> *>(
+                  addr.operator->());
+              ptr = dbg.AddRef(rPath.localPath, hash);
+            }
+          })
+          .status;
+    });
 
     break;
   }
   default:
     break;
   }
+
+  return {NO_ERROR};
 }
 
-void SetClass(const prime::reflect::Class *cls, Addr addr, HSQUIRRELVM v,
-              prime::utils::PlayGround &pg,
-              prime::utils::ResourceDebugPlayground &dbg) {
+Return<void> SetClass(const prime::reflect::Class *cls, Addr addr,
+                      HSQUIRRELVM v, prime::utils::PlayGround &pg,
+                      prime::utils::ResourceDebugPlayground &dbg) {
   namespace pr = prime::reflect;
   StackGuard g(v);
+  Return<void> retVal;
+
   for (uint32 i = 0; i < cls->nMembers; i++) {
     const pr::Member &member = cls->members[i];
 
@@ -593,10 +628,12 @@ void SetClass(const prime::reflect::Class *cls, Addr addr, HSQUIRRELVM v,
     if (SQ_SUCCEEDED(sq_get(v, -2))) {
       auto addr_ = addr;
       addr_.offset += member.offset;
-      SetObject(member.types, member.nTypes, 0, addr_, v, pg, dbg);
+      retVal |= SetObject(member.types, member.nTypes, 0, addr_, v, pg, dbg);
       sq_poptop(v);
     }
   }
+
+  return retVal;
 }
 
 static SQInteger AddResource(HSQUIRRELVM v) {
@@ -608,48 +645,54 @@ static SQInteger AddResource(HSQUIRRELVM v) {
   std::string oPath(path);
   oPath.push_back('.');
 
-  /*const prime::reflect::Class *cls =
-      prime::reflect::GetReflectedClass(classHash);
-  oPath.append(cls->extension);
-  prime::common::RegisterResource(oPath);
+  prime::reflect::GetReflectedClass(classHash)
+      .Success([&](const prime::reflect::Class *cls) {
+        std::string clsBuffer(cls->classSize, 0);
+        cls->construct(clsBuffer.data());
+        namespace pu = prime::utils;
+        namespace pr = prime::reflect;
 
-  std::string clsBuffer(cls->classSize, 0);
-  cls->construct(clsBuffer.data());
-  namespace pu = prime::utils;
-  namespace pr = prime::reflect;
+        pu::PlayGround pg;
+        pu::ResourceDebugPlayground dbg;
+        pu::PlayGround::Pointer<prime::common::ResourceBase> baseClass =
+            pg.NewBytes<prime::common::ResourceBase>(clsBuffer.data(),
+                                                     cls->classSize);
 
-  pu::PlayGround pg;
-  pu::ResourceDebugPlayground dbg;
-  pu::PlayGround::Pointer<prime::common::ResourceBase> baseClass =
-      pg.NewBytes<prime::common::ResourceBase>(clsBuffer.data(),
-                                               cls->classSize);
+        sq_push(v, 3);
+        Return<void> retVal = SetClass(cls, baseClass, v, pg, dbg).Success([&] {
+          std::string built = dbg.Build(pg, cls);
+          oPath.append(cls->extension);
 
-  sq_push(v, 3);
-  SetClass(cls, baseClass, v, pg, dbg);
-  sq_poptop(v);
+          return prime::common::RegisterResource(oPath).Success([&] {
+            std::ofstream ostr(cacheFolder + oPath,
+                               std::ios::binary | std::ios::out);
 
-  std::string built = dbg.Build(pg, cls);
-  std::ofstream ostr(cacheFolder + oPath, std::ios::binary | std::ios::out);
+            if (ostr.fail()) {
+              oPath = cacheFolder;
 
-  if (ostr.fail()) {
-    oPath = cacheFolder;
+              AFileInfo finf(path);
+              auto exploded = finf.Explode();
+              exploded.pop_back();
 
-    AFileInfo finf(path);
-    auto exploded = finf.Explode();
-    exploded.pop_back();
+              for (auto &e : exploded) {
+                oPath.append(e);
+                oPath.push_back('/');
+                es::mkdir(oPath);
+              }
 
-    for (auto &e : exploded) {
-      oPath.append(e);
-      oPath.push_back('/');
-      es::mkdir(oPath);
-    }
+              oPath.append(finf.GetFilename());
+              oPath.push_back('.');
+              oPath.append(cls->extension);
+              ostr.open(oPath, std::ios::binary | std::ios::out);
+            }
+            ostr.write(built.data(), built.size());
+          });
+        });
+        sq_poptop(v);
 
-    oPath.append(finf.GetFilename());
-    oPath.push_back('.');
-    oPath.append(cls->extension);
-    ostr.open(oPath, std::ios::binary | std::ios::out);
-  }
-  ostr.write(built.data(), built.size());*/
+        return retVal;
+      })
+      .Unused();
 
   return 0;
 }

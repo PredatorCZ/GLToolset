@@ -16,7 +16,7 @@ function VertexPointLight(modelSpace = vec3) {
   viewPosTs <- TransformTSNormal(viewPos);
   pointLightPos <- array(NUM_POINTLIGHTS, vec3)
 
-  for (int l = 0; l < NUM_POINTLIGHTS; l++) {
+  for (local l = 0; l < NUM_POINTLIGHTS; l++) {
     pointLightPos[usedPointLights[l]] = TransformTSNormal(pointLights[l].position);
   }
 }

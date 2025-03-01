@@ -52,6 +52,7 @@ struct ResourceDebug {
   common::LocalArray32<ResourceDebugDependency> dependencies;
   common::LocalArray32<common::String> strings;
   common::LocalArray32<ResourceDebugClass> classes;
+  common::LocalPointer<common::ResourceBase> converter;
   uint32 inputCrc = 0;
 };
 

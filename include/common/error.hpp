@@ -7,6 +7,10 @@
   prime::common::ReturnStatus { 1 }
 #define ERROR_KEY_NOT_FOUND_IN_MAP                                             \
   prime::common::ReturnStatus { 2 }
+#define ERROR_INVALID_HEADER                                                   \
+  prime::common::ReturnStatus { 3 }
+#define ERROR_INVALID_VERSION                                                  \
+  prime::common::ReturnStatus { 4 }
 
 namespace prime::common {
 struct ReturnStatus {
@@ -18,7 +22,7 @@ struct ReturnStatus {
 template <class C>
 concept IsReturnType = !std::is_void_v<C> && requires(C t) {
   { t.status } -> std::same_as<ReturnStatus &>;
-  t.retVal;
+  { t.Unused() } -> std::same_as<void>;
 };
 
 template <class C>
@@ -26,8 +30,10 @@ concept NotReturnType = !IsReturnType<C>;
 
 template <class... C>
 void ErrorImpl(const char *fmt [[maybe_unused]], C &&...args [[maybe_unused]]) {
+  printf(fmt, args...);
+  printf("\n");
 }
-inline void ErrorImpl(const char *msg [[maybe_unused]]) {}
+inline void ErrorImpl(const char *msg [[maybe_unused]]) { printf("%s\n", msg); }
 
 template <class... C>
 ReturnStatus Error_(ReturnStatus type, const char *fmt, C &&...args) {
@@ -45,8 +51,10 @@ inline ReturnStatus RuntimeError(const char *msg) {
   return {ERROR_RUNTIME};
 }
 
-#define RUNTIME_ERROR(...) prime::common::RuntimeError(__VA_ARGS__)
-// prime::common::RuntimeError("%s: " fmt, __PRETTY_FUNCTION__, __VA_ARGS__)
+#define RUNTIME_ERROR(fmt, ...)                                                \
+  prime::common::RuntimeError("%s:%d: RUNTIME_ERROR in function %s: " fmt,     \
+                              __FILE__, __LINE__,                              \
+                              __PRETTY_FUNCTION__ __VA_OPT__(, ) __VA_ARGS__)
 
 template <class C> struct [[nodiscard]] Return;
 
@@ -89,6 +97,14 @@ template <class C> struct [[nodiscard]] Return {
     return retVal;
   }
 
+  C ValueOr(C onFail) {
+    if (status) [[unlikely]] {
+      return onFail;
+    }
+
+    return retVal;
+  }
+
   template <class F> auto Invoke(F &&fn);
 
   template <class F1, class F2> auto Either(F1 &&onSuccess, F2 &&onFail) {
@@ -110,6 +126,11 @@ template <> struct [[nodiscard]] Return<void> {
   using T = ReturnTraits;
 
   void Unused() {}
+
+  Return<void> &operator|=(Return<void> o) {
+    status.value += !status * o.status.value;
+    return *this;
+  }
 
   template <class F1, class F2> auto Either(F1 &&onSuccess, F2 &&onFail) {
     if (status) [[unlikely]] {
@@ -144,8 +165,8 @@ prime::common::Return<void> prime::common::Return<C>::Void() {
 template <class C>
 template <class F>
 auto prime::common::Return<C>::Invoke(F &&fn) {
-  if constexpr (std::is_invocable_v<F, C&>) {
-    using IR = std::decay_t<std::invoke_result_t<F, C&>>;
+  if constexpr (std::is_invocable_v<F, C &>) {
+    using IR = std::decay_t<std::invoke_result_t<F, C &>>;
     if constexpr (std::is_void_v<IR>) {
       fn(retVal);
       return *this;

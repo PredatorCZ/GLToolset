@@ -14,5 +14,6 @@ build_target(
   spike
   prime_reflect
   prime_script
+  prime_script_base
   prime_converters
 )

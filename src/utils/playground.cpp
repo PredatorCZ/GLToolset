@@ -311,5 +311,21 @@ void PlayGround::NewString(common::String &arrayRef, std::string_view value) {
     memcpy(arrayRef.asTiny.data , value.data(), value.size());
 }
 
+void PlayGround::NewCString(common::String &arrayRef, std::string_view value) {
+  arrayRef.asBig.length = value.size() << 1;
+
+  if (value.size() > 6) {
+      Pointer<char> ptr = Allocate(value.size() + 1, 1);
+      memcpy(ptr.operator->(), value.data(), value.size());
+      ptr.operator->()[value.size()] = '\0';
+      arrayRef.asBig.data = ptr.operator->();
+      AddPointer(&arrayRef.asBig.data.pointer);
+      return;
+    }
+
+    arrayRef.asTiny.length |= 1;
+    memcpy(arrayRef.asTiny.data , value.data(), value.size());
+    arrayRef.asTiny.data[value.size()] = '\0';
+}
 
 } // namespace prime::utils

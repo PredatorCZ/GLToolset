@@ -66,7 +66,7 @@ ResourceDebugPlayground::AddDebugClass(const reflect::Class *cls) {
               } else {
                 Link(newType->definition, found);
               }
-            });
+            }).Unused();
       }
     }
   }

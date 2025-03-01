@@ -7,6 +7,7 @@ build_target(
   graphics.cpp
   reflect.cpp
   script.cpp
+  utils.cpp
   LINKS
   spike-interface
   PROPERTIES

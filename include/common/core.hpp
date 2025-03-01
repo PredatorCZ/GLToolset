@@ -144,15 +144,19 @@ consteval uint64 ExtensionFromClassName(std::string_view fullName) {
   return buffa;
 }
 
-template <class C> void ValidateClass(const C &item) {
+template <class C> ReturnStatus ValidateClass(const C &item) {
   const Resource<C> dummy;
   if (item.hash != dummy.hash) {
-    throw es::InvalidHeaderError(item.hash);
+    ErrorImpl("Invalid header format: 0x%X expected: 0x%X", item.hash, dummy.hash);
+    return ERROR_INVALID_HEADER;
   }
 
   if (item.version != dummy.version) {
-    throw es::InvalidVersionError(item.version);
+    ErrorImpl("Invalid format version: 0x%X expected: 0x%X", item.version, dummy.version);
+    return ERROR_INVALID_VERSION;
   }
+
+  return NO_ERROR;
 }
 
 template <class M, class F>
@@ -222,6 +226,7 @@ HASH_CLASS(int32);
 HASH_CLASS(float);
 HASH_CLASS(JenHash);
 HASH_CLASS(JenHash3);
+HASH_CLASS(prime::common::ResourceBase);
 
 union Color {
   struct {

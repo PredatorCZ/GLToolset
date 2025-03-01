@@ -26,16 +26,16 @@ struct ResourceData {
   std::string buffer;
   int32 numRefs = 0;
 
-  template <class C> C *As() {
+  template <class C> Return<C*> As() {
     C *item = reinterpret_cast<C *>(buffer.data());
 
     if constexpr (is_type_complete_v<C>) {
       if constexpr (std::is_base_of_v<ResourceBase, C>) {
-        ValidateClass(*item);
+        return {ValidateClass(*item), item};
       }
     }
 
-    return item;
+    return {NO_ERROR, item};
   }
 };
 

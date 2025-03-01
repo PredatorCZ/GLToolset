@@ -249,10 +249,11 @@ template <> class prime::common::InvokeGuard<Texture> {
   static inline const bool data = prime::common::AddResourceHandle<Texture>({
       .Process =
           [](ResourceData &data) {
-            auto hdr = data.As<graphics::Texture>();
-            auto unit = AddTexture(*hdr, data.hash.name);
-            TEXTURE_UNITS.emplace(data.hash.name, unit);
-            TEXTURE_REMAPS.emplace(unit.id, data.hash.name);
+            data.As<graphics::Texture>().Success([&](graphics::Texture *hdr) {
+              auto unit = AddTexture(*hdr, data.hash.name);
+              TEXTURE_UNITS.emplace(data.hash.name, unit);
+              TEXTURE_REMAPS.emplace(unit.id, data.hash.name);
+            }).Unused();
           },
       .Delete = nullptr,
   });

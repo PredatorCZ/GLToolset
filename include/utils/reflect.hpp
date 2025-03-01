@@ -121,5 +121,5 @@ struct Enum {
 };
 
 template <class C> const Enum *GetReflectedEnum();
-const Enum *GetReflectedEnum(uint32 hash);
+common::Return<const Enum *> GetReflectedEnum(uint32 hash);
 } // namespace prime::reflect

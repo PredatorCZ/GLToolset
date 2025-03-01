@@ -9,6 +9,7 @@ build_target(
   converters.cpp
   image.cpp
   md2.cpp
+  texture_compiler.cpp
 
   ${TPD_PATH}/ispctex/ispc_texcomp.cpp
   ${TPD_PATH}/stb/stb_image.c

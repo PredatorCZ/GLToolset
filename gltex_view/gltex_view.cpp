@@ -160,13 +160,6 @@ void GLAPIENTRY MessageCallback(GLenum source, GLenum type, GLuint id,
 }
 
 int main(int, char *argv[]) {
-  long seg, addr;
-  char name[0x1000];
-
-  auto ret = sscanf(" 002:B985D0 MtCollada::DTI::`vftable'", " %04lX : %08lX %[^\t\n ;]", &seg, &addr, name);
-
-
-
   es::print::AddPrinterFunction(es::Print);
 
   glfwSetErrorCallback(
@@ -232,7 +225,7 @@ int main(int, char *argv[]) {
     mainUniform.hash = pc::MakeHash<pg::UniformBlockData>("main_uniform");
     pc::AddSimpleResource(std::move(mainUniform));
     auto &res = pc::LoadResource(mainUniform.hash);
-    return res.As<MainUBType>();
+    return res.As<MainUBType>().retVal;
   }();
 
   *mainUBData = {{0.7, 0.7, 0.7}, 1.5, 32.f, 1.f, 0.3f};
@@ -330,8 +323,7 @@ int main(int, char *argv[]) {
 
     std::string_view ext = assInf.GetExtension().substr(1);
 
-    uint32 classId = pc::GetClassFromExtension(ext).ValueOr(
-        [] { throw std::runtime_error("Invalid asset type"); });
+    uint32 classId = pc::GetClassFromExtension(ext).retVal;
 
     if (classId == pc::GetClassHash<pg::ModelSingle>() || ext == "md2") {
       mainObject = BuildFromModel(std::string(assInf.GetFullPathNoExt()));
@@ -356,6 +348,8 @@ int main(int, char *argv[]) {
       lightOrbit.w = 1.5;
       isModel = false;
       lightScale = 0.1;
+    } else {
+      throw std::runtime_error("Invalid asset type");
     }
   };
 

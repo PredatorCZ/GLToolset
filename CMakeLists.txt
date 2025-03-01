@@ -62,7 +62,7 @@ add_subdirectory(gltex_view)
 add_spike_subdir(gltex)
 add_spike_subdir(glmod)
 add_spike_subdir(cache)
-
+add_spike_subdir(nutty_shader)
 
 add_executable(test_curvebatch_avx src/motion/curvebatch_evaluate.cpp)
 target_compile_options(test_curvebatch_avx PRIVATE -msse4 -mavx2 -mfma -O4)
