@@ -43,6 +43,7 @@ template <class C> struct LocalPointerBase {
 template <class C> struct LocalPointer : LocalPointerBase<C> {
   uint32 classHash = GetClassHash<C>();
   static_assert(GetClassHash<C>(), "Unregistered prime class.");
+  using LocalPointerBase<C>::operator=;
 };
 
 template <class... C>
