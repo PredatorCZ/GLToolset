@@ -24,7 +24,7 @@ class WeightData {
 }
 
 function unpackUint4x8(input = uint) {
-  return (input.xxxx >> uvec4(0, 8, 16, 24)) & 0xffu;
+  return (input.xxxx >> uvec4(0, 8, 16, 24)) & 0xff;
 }
 
 function Get4BoneTm(baseIndex = uint, modelSpace = vec4) {
@@ -50,7 +50,7 @@ function GetModelSpace(modelSpace = vec4) {
     } else if (index < weightData.wt4BeginIndex) {
       local wt = unpackUint4x8(weightData.data[index - numBones]);
       local bones = wt.xy;
-      local weights = vec2(wt.zw) * (1 / 255.f);
+      local weights = vec2(wt.zw) * (1 / 255);
       local tm0 = GetSingleModelTransform(modelSpace, bones.x) * weights.x;
       local tm1 = GetSingleModelTransform(modelSpace, bones.y) * weights.y;
 
