@@ -9,6 +9,7 @@ build_target(
   converters.cpp
   image.cpp
   md2.cpp
+  texture_compiler.cpp
 
   ${TPD_PATH}/ispctex/ispc_texcomp.cpp
   ${TPD_PATH}/stb/stb_image.c
@@ -29,4 +30,5 @@ build_target(
   ON
 )
 
+target_compile_options(prime_converters PRIVATE -fno-sanitize=all)
 target_link_libraries(prime_converters ${ISPCTEX_DIR}/kernel_ispc_avx2.o ${ISPCTEX_DIR}/kernel_ispc_sse4.o ${ISPCTEX_DIR}/kernel_ispc.o)
