@@ -43,7 +43,7 @@ struct ResourceDebugClass {
 
 struct ResourceDebugFooter {
   static const uint32 ID = common::GetClassExtension<ResourceDebug>().raw;
-  uint32 pad : 8;
+  uint32 pad : 8 = 0;
   uint32 dataSize : 24;
   uint32 id = ID;
 };
@@ -52,6 +52,7 @@ struct ResourceDebug {
   common::LocalArray32<ResourceDebugDependency> dependencies;
   common::LocalArray32<common::String> strings;
   common::LocalArray32<ResourceDebugClass> classes;
+  common::LocalPointer<common::ResourceBase> converter;
   uint32 inputCrc = 0;
 };
 

@@ -202,6 +202,13 @@ std::map<uint32, std::vector<Converter>> CONVERTERS{
         },
     },
 };
+
+using CompileReg = std::map<uint32, prime::utils::CompileFunc>;
+
+CompileReg &Compilers() {
+  static CompileReg COMPILERS;
+  return COMPILERS;
+}
 } // namespace
 
 namespace prime::utils {
@@ -240,5 +247,20 @@ bool ConvertResource(const common::ResourcePath &path) {
   viableConvertors.front().Func(&ctx);
 
   return true;
+}
+
+CompileFunc GetCompileFunction(uint32 compilerClassHash) {
+  auto found = Compilers().find(compilerClassHash);
+
+  if (found == Compilers().end()) {
+    return nullptr;
+  }
+
+  return found->second;
+}
+
+uint32 detail::RegisterCompiler(uint32 compilerClassHash, CompileFunc func) {
+  Compilers().emplace(compilerClassHash, func);
+  return 0;
 }
 } // namespace prime::utils
