@@ -67,9 +67,9 @@ void prime::script::BuildFuncProto(SQFuncState *fs) {
   proto->stackSize = fs->_stacksize;
   proto->varParams = fs->_varparams;
   SQString *s = _string(fs->_sourcename);
-  pg.NewString(proto->sourceName, {s->Val(), size_t(s->Size())});
+  pg.NewCString(proto->sourceName, {s->Val(), size_t(s->Size())});
   s = _string(fs->_name);
-  pg.NewString(proto->name, {s->Val(), size_t(s->Size())});
+  pg.NewCString(proto->name, {s->Val(), size_t(s->Size())});
 
   for (uint32 i = 0; i < fs->_instructions.size(); i++) {
     pg.ArrayEmplace(proto->instructions, fs->_instructions[i]);
@@ -81,7 +81,7 @@ void prime::script::BuildFuncProto(SQFuncState *fs) {
     oVar->type = OuterType(var._type);
     oVar->src = int32(_integer(var._src));
     SQString *s = _string(var._name);
-    pg.NewString(oVar->name, {s->Val(), size_t(s->Size())});
+    pg.NewCString(oVar->name, {s->Val(), size_t(s->Size())});
   }
 
   for (uint32 i = 0; i < fs->_localvarinfos.size(); i++) {
@@ -91,7 +91,7 @@ void prime::script::BuildFuncProto(SQFuncState *fs) {
     oVar->endOp = var._end_op;
     oVar->pos = var._pos;
     SQString *s = _string(var._name);
-    pg.NewString(oVar->name, {s->Val(), size_t(s->Size())});
+    pg.NewCString(oVar->name, {s->Val(), size_t(s->Size())});
   }
 
   for (uint32 i = 0; i < fs->_lineinfos.size(); i++) {

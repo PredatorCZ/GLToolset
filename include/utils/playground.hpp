@@ -123,6 +123,13 @@ public:
 
   void NewString(common::String &arrayRef, std::string_view value);
 
+  template <size_t N>
+  void NewCString(common::String &arrayRef, const char (&value)[N]) {
+    NewString(arrayRef, {value, N - 1});
+  }
+
+  void NewCString(common::String &arrayRef, std::string_view value);
+
   template <class C>
   Pointer<C> NewBytes(const char *data, size_t size = sizeof(C)) {
     Pointer<C> retVal(Allocate(size, alignof(C)));
