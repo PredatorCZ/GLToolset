@@ -20,7 +20,7 @@ template <class C> struct Array {
 
 template <class C, class D> struct LocalArray {
   uint32 classHash = GetClassHash<C>();
-  D numItems = 0;
+  std::make_unsigned_t<D> numItems = 0;
   D pointer;
 
   static_assert(GetClassHash<C>(), "Unregistered prime class.");
