@@ -67,7 +67,7 @@ struct SQFuncState
     SQFuncState(SQSharedState *ss,SQFuncState *parent,CompilerErrorFunc efunc,void *ed, prime::utils::PlayGround::Pointer<prime::script::FuncProto> nProto, SQFunctionProto *fProto);
     ~SQFuncState();
 #ifdef _DEBUG_DUMP
-    void Dump(SQFunctionProto *func);
+    void Dump(prime::script::FuncProto *func);
 #endif
     void Error(const SQChar *err);
     SQFuncState *PushChildState(SQSharedState *ss);
