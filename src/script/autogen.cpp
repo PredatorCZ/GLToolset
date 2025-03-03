@@ -234,6 +234,19 @@ void DumpClass(const pr::Class *cls) {
   std::string_view className(cls->className);
   str << "class ";
 
+  char instanceBuffer[0xffff]{};
+  std::string instanceHeap;
+  char *instanceData = nullptr;
+
+  if (cls->construct) {
+    instanceData = instanceBuffer;
+    if (cls->classSize > sizeof(instanceBuffer)) {
+      instanceHeap.resize(cls->classSize);
+      instanceData = instanceHeap.data();
+    }
+    cls->construct(instanceData);
+  }
+
   AppendClassName(str, className);
 
   str << " {\n";
@@ -244,7 +257,7 @@ void DumpClass(const pr::Class *cls) {
       this[k] = v
     }
     ::AddResource(fileName, this, 0x)"
-     << std::hex <<JenkinsHash_(className) << R"()
+        << std::hex << JenkinsHash_(className) << std::dec << R"()
   }
 )";
   }
@@ -255,6 +268,63 @@ void DumpClass(const pr::Class *cls) {
     str << "  " << member.name << " = ";
 
     const pr::DataType &type = member.types[0];
+
+    auto GetValue = [&](const pr::DataType &type, std::ostream &str) {
+      int64 retVal = 0;
+
+      if (instanceData) {
+        memcpy(&retVal, instanceData + member.offset, type.size);
+      }
+
+      switch (type.type) {
+      case pr::Type::Bool:
+        str << (retVal ? "true" : "false");
+        break;
+
+      case pr::Type::Float:
+        str << reinterpret_cast<const float &>(retVal);
+        break;
+
+      case pr::Type::Uint:
+        str << uint64(retVal);
+        break;
+
+      case pr::Type::Int:
+        retVal <<= (8 - type.size) * 8;
+        retVal >>= (8 - type.size) * 8;
+        str << retVal;
+        break;
+
+      case pr::Type::Enum:
+        RequestEnum(type.hash, cls)
+            .Either(
+                [&](const pr::Enum *enums) {
+                  AppendEnumName(str, enums->name);
+                  bool found = false;
+
+                  for (uint32 v = 0; v < enums->nMembers; v++) {
+                    if (!memcmp(&retVal,
+                                static_cast<const char *>(enums->values) +
+                                    v * enums->size,
+                                enums->size)) {
+                      str << '.' << enums->names[v];
+                      found = true;
+                      break;
+                    }
+                  }
+
+                  if (!found) {
+                    str << '.' << enums->names[0];
+                  }
+                },
+                [&] { AppendEnumName(str, "__UNREGISTERED__"); })
+            .Unused();
+        break;
+
+      default:
+        break;
+      }
+    };
 
     switch (type.container) {
     case pr::Container::Array:
@@ -272,7 +342,11 @@ void DumpClass(const pr::Class *cls) {
     default:
       switch (type.type) {
       case pr::Type::Bool:
-        str << "false";
+      case pr::Type::Int:
+      case pr::Type::Uint:
+      case pr::Type::Float:
+      case pr::Type::Enum:
+        GetValue(type, str);
         break;
       case pr::Type::ExternalResource:
         str << '"';
@@ -283,13 +357,6 @@ void DumpClass(const pr::Class *cls) {
           str << "none";
         }
         str << ":\"";
-        break;
-      case pr::Type::Int:
-      case pr::Type::Uint:
-        str << "0";
-        break;
-      case pr::Type::Float:
-        str << "0.0";
         break;
       case pr::Type::Quat:
         str << "DEFAULT_ROTATION";
@@ -339,12 +406,6 @@ void DumpClass(const pr::Class *cls) {
             .Unused();
         str << "()";
         break;
-      case pr::Type::Enum: {
-        const pr::Enum *enums = RequestEnum(type.hash, cls);
-        AppendEnumName(str, enums->name);
-        str << '.' << enums->names[0];
-        break;
-      }
       case pr::Type::HString:
       case pr::Type::String: {
         str << "\"\"";
@@ -366,7 +427,7 @@ void DumpClass(const pr::Class *cls) {
 void DumpEnum(const pr::Enum *enums) {
   std::ostream &str = LINKED_CLASSES[enums].definition;
   LINKED_CLASSES[enums].isEnum = true;
-  //str << "enum ";
+  // str << "enum ";
   AppendEnumName(str, enums->name);
   str << " <- {\n";
 
