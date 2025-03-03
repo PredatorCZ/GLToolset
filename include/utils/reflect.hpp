@@ -86,7 +86,7 @@ struct Class {
 };
 
 template <class C> const Class *GetReflectedClass();
-const Class *GetReflectedClass(uint32 hash);
+common::Return<const Class *> GetReflectedClass(uint32 hash);
 
 template <class C> struct EnumMember {
   using value_type = C;
@@ -121,5 +121,5 @@ struct Enum {
 };
 
 template <class C> const Enum *GetReflectedEnum();
-const Enum *GetReflectedEnum(uint32 hash);
+common::Return<const Enum *> GetReflectedEnum(uint32 hash);
 } // namespace prime::reflect

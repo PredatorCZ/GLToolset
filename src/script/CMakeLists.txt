@@ -1,12 +1,9 @@
 build_target(
   NAME
-  prime_script
+  prime_script_base
   TYPE
   OBJECT
   SOURCES
-  autogen.cpp
-  resource_compiler.cpp
-  resource_classes.cpp
   funcproto.cpp
   sqbase/sqvm.cpp
   sqbase/sqapi.cpp
@@ -22,6 +19,29 @@ build_target(
   sqbase/sqmem.cpp
   INCLUDES
   ${CMAKE_SOURCE_DIR}/include/script/detail/sqbase
+  DEFINITIONS
+  _DEBUG_DUMP
   LINKS
   spike-interface
+  PROPERTIES
+  POSITION_INDEPENDENT_CODE
+  ON
+)
+
+build_target(
+  NAME
+  prime_script
+  TYPE
+  OBJECT
+  SOURCES
+  autogen.cpp
+  resource_compiler.cpp
+  resource_classes.cpp
+  INCLUDES
+  ${CMAKE_SOURCE_DIR}/include/script/detail/sqbase
+  LINKS
+  prime_script_base
+  PROPERTIES
+  POSITION_INDEPENDENT_CODE
+  ON
 )

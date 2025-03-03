@@ -134,8 +134,7 @@ struct MakeContext : AppPackContext {
   std::vector<IFile> files;
   std::set<std::string> fileNames;
 
-  MakeContext(std::string baseFile_)
-      : baseFile(std::move(baseFile_)) {}
+  MakeContext(std::string baseFile_) : baseFile(std::move(baseFile_)) {}
 
   void SendFile(std::string_view path, std::istream &stream) override {
     auto dot = path.find_last_of('.');
@@ -151,11 +150,8 @@ struct MakeContext : AppPackContext {
       return;
     }
 
-    try {
-      clHash = prime::common::GetClassFromExtension(ext);
-    } catch (...) {
-      throw std::runtime_error("File not supported.");
-    }
+    clHash = prime::common::GetClassFromExtension(ext).ValueOr(
+        [] { throw std::runtime_error("File not supported."); });
 
     if (!streams.contains(clHash)) {
       std::lock_guard lg(mtx);

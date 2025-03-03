@@ -16,7 +16,7 @@ template <class C> ResourceHash MakeHash(std::string_view name) {
 struct ResourcePath {
   ResourceHash hash;
   std::string localPath;
-  std::string_view workingDir;
+  std::string_view workingDir{};
 
   std::string AbsPath() const { return std::string(workingDir) + localPath; }
 };
@@ -26,16 +26,16 @@ struct ResourceData {
   std::string buffer;
   int32 numRefs = 0;
 
-  template <class C> C *As() {
+  template <class C> Return<C*> As() {
     C *item = reinterpret_cast<C *>(buffer.data());
 
     if constexpr (is_type_complete_v<C>) {
       if constexpr (std::is_base_of_v<ResourceBase, C>) {
-        ValidateClass(*item);
+        return {ValidateClass(*item), item};
       }
     }
 
-    return item;
+    return {NO_ERROR, item};
   }
 };
 
@@ -59,7 +59,7 @@ const std::string &CacheDataFolder();
 void AddWorkingFolder(std::string path);
 
 // Resource registry
-void RegisterResource(std::string path);
+Return<void> RegisterResource(std::string path);
 void AddSimpleResource(ResourceData &&resource);
 ResourceHash AddSimpleResource(std::string path, uint32 classHash);
 template <class C> ResourceHash AddSimpleResource(const std::string &path) {
@@ -81,7 +81,7 @@ template <class C> bool AddResourceHandle(ResourceHandle handle) {
 }
 
 void *GetResourceHandle(ResourceData &data);
-const ResourceHandle &GetClassHandle(uint32 classHash);
+Return<const ResourceHandle *>GetClassHandle(uint32 classHash);
 
 template <class C> C *LinkResource(Pointer<C> &resource) {
   if (resource.isLinked) {

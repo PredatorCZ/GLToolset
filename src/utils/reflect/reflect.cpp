@@ -117,12 +117,11 @@ int AddClass(const prime::reflect::Class *cls) {
   return GetClasses().emplace(JenkinsHash_(cls->className), cls).second;
 }
 
-const Class *GetReflectedClass(uint32 hash) {
-  try {
-    return GetClasses().at(hash);
-  } catch (std::out_of_range &e) {
-    throw std::out_of_range("GetReflectedClass: Class is not registered!");
-  }
+common::Return<const Class *> GetReflectedClass(uint32 hash) {
+  return common::MapGetOr(GetClasses(), hash, [hash]{
+    common::RuntimeError("Class 0x%X is not registered!", hash);
+    return nullptr;
+  });
 }
 
 std::map<uint32, const Enum *> &GetEnums() {
@@ -134,12 +133,11 @@ int AddEnum(const prime::reflect::Enum *enm) {
   return GetEnums().emplace(JenkinsHash_(enm->name), enm).second;
 }
 
-const Enum *GetReflectedEnum(uint32 hash) {
-  try {
-    return GetEnums().at(hash);
-  } catch (std::out_of_range &e) {
-    throw std::out_of_range("GetReflectedEnum: Enum is not registered!");
-  }
+common::Return<const Enum *> GetReflectedEnum(uint32 hash) {
+  return common::MapGetOr(GetEnums(), hash, []{
+    common::RuntimeError("Enum is not registered!");
+    return nullptr;
+  });
 }
 
 } // namespace prime::reflect

@@ -267,8 +267,11 @@ template <> class prime::common::InvokeGuard<prime::graphics::ModelSingle> {
       common::AddResourceHandle<graphics::ModelSingle>({
           .Process =
               [](ResourceData &data) {
-                auto hdr = data.As<graphics::ModelSingle>();
-                graphics::AddModelSingle(*hdr, data.hash);
+                data.As<graphics::ModelSingle>()
+                    .Success([&](graphics::ModelSingle *hdr) {
+                      graphics::AddModelSingle(*hdr, data.hash);
+                    })
+                    .Unused();
               },
           .Delete = nullptr,
           .Update =
@@ -278,9 +281,12 @@ template <> class prime::common::InvokeGuard<prime::graphics::ModelSingle> {
                   return;
                 }
 
-                graphics::RebuildProgram(
-                    *common::LoadResource(hash).As<graphics::ModelSingle>(),
-                    hash, 0);
+                common::LoadResource(hash)
+                    .As<graphics::ModelSingle>()
+                    .Success([hash](graphics::ModelSingle *hdr) {
+                      graphics::RebuildProgram(*hdr, hash, 0);
+                    })
+                    .Unused();
               },
       });
 };

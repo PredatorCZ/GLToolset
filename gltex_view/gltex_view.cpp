@@ -21,6 +21,7 @@
 #include "graphics/post_process.hpp"
 #include "graphics/program.hpp"
 #include "graphics/sampler.hpp"
+#include "script/scriptapi.hpp"
 #include "tex_format_ref.hpp"
 #include "utils/instancetm_builder.hpp"
 #include "utils/resource_report.hpp"
@@ -214,10 +215,12 @@ int main(int, char *argv[]) {
   pg::SetDefaultAnisotropy(anisotropy);
 
   pg::MinimumStreamIndexForDeferredLoading(-1);
+  pg::ClampTextureResolution(-1);
 
   pc::AddWorkingFolder("/home/lukas/github/gltoolset/src/shaders/");
   pc::AddWorkingFolder("/home/lukas/github/gltoolset/gltex_view/res/");
-  pc::ProjectDataFolder("/home/lukas/Downloads/alienarena/");
+  pc::ProjectDataFolder(argv[1]);
+  prime::script::AutogenerateScriptClasses();
 
   MainUBType *mainUBData = [&] {
     pc::ResourceData mainUniform;
@@ -225,7 +228,7 @@ int main(int, char *argv[]) {
     mainUniform.hash = pc::MakeHash<pg::UniformBlockData>("main_uniform");
     pc::AddSimpleResource(std::move(mainUniform));
     auto &res = pc::LoadResource(mainUniform.hash);
-    return res.As<MainUBType>();
+    return res.As<MainUBType>().retVal;
   }();
 
   *mainUBData = {{0.7, 0.7, 0.7}, 1.5, 32.f, 1.f, 0.3f};
@@ -323,7 +326,7 @@ int main(int, char *argv[]) {
 
     std::string_view ext = assInf.GetExtension().substr(1);
 
-    uint32 classId = pc::GetClassFromExtension(ext);
+    uint32 classId = pc::GetClassFromExtension(ext).retVal;
 
     if (classId == pc::GetClassHash<pg::ModelSingle>() || ext == "md2") {
       mainObject = BuildFromModel(std::string(assInf.GetFullPathNoExt()));
@@ -353,7 +356,7 @@ int main(int, char *argv[]) {
     }
   };
 
-  LoadAsset(argv[1]);
+  LoadAsset(argv[2]);
 
   /*std::thread streamer([&, &texture = texture] {
     glfwMakeContextCurrent(sharedWindow);
@@ -458,7 +461,7 @@ int main(int, char *argv[]) {
         if (ImGui::BeginMenu("File")) {
           if (ImGui::MenuItem("Open", "Ctrl+O")) {
             ImGuiFileDialog::Instance()->OpenDialog(
-                "ChooseFileDlgKey", "Choose File", ".gtte,.gmse", argv[1]);
+                "ChooseFileDlgKey", "Choose File", ".md2", argv[1]);
           }
           ImGui::EndMenu();
         }
@@ -471,7 +474,9 @@ int main(int, char *argv[]) {
         if (ImGuiFileDialog::Instance()->IsOk()) {
           std::string filePathName =
               ImGuiFileDialog::Instance()->GetFilePathName();
-          LoadAsset(ImGuiFileDialog::Instance()->GetFilePathName());
+          if (filePathName.starts_with(argv[1])) {
+            LoadAsset(filePathName.substr(strlen(argv[1])));
+          }
         }
         ImGuiFileDialog::Instance()->Close();
       }

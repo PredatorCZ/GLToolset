@@ -3,6 +3,7 @@
 #include "spike/crypto/jenkinshash3.hpp"
 #include "spike/except.hpp"
 #include <string_view>
+#include "error.hpp"
 
 #define HASH_CLASS(...)                                                        \
   template <> constexpr uint32 prime::common::GetClassHash<__VA_ARGS__>() {    \
@@ -143,18 +144,71 @@ consteval uint64 ExtensionFromClassName(std::string_view fullName) {
   return buffa;
 }
 
-template <class C> void ValidateClass(const C &item) {
+template <class C> ReturnStatus ValidateClass(const C &item) {
   const Resource<C> dummy;
   if (item.hash != dummy.hash) {
-    throw es::InvalidHeaderError(item.hash);
+    ErrorImpl("Invalid header format: 0x%X expected: 0x%X", item.hash, dummy.hash);
+    return ERROR_INVALID_HEADER;
   }
 
   if (item.version != dummy.version) {
-    throw es::InvalidVersionError(item.version);
+    ErrorImpl("Invalid format version: 0x%X expected: 0x%X", item.version, dummy.version);
+    return ERROR_INVALID_VERSION;
   }
+
+  return NO_ERROR;
 }
 
-uint32 GetClassFromExtension(std::string_view ext);
+template <class M, class F>
+Return<typename M::mapped_type> MapGetOr(M &map, typename M::key_type &key,
+                                         F &&onNotFound) {
+  auto found = map.find(key);
+
+  if (found == map.end()) {
+    return {ERROR_KEY_NOT_FOUND_IN_MAP, typename M::mapped_type(onNotFound())};
+  }
+
+  return {NO_ERROR, found->second};
+}
+
+template <class M, class F>
+Return<std::add_pointer_t<typename M::mapped_type>>
+MapGetPtrOr(M &map, typename M::key_type &key, F &&onNotFound) {
+  auto found = map.find(key);
+
+  if (found == map.end()) {
+    if constexpr (std::is_same_v<std::invoke_result_t<F>, void>) {
+      onNotFound();
+      return {ERROR_KEY_NOT_FOUND_IN_MAP};
+    } else {
+      return {ERROR_KEY_NOT_FOUND_IN_MAP,
+              std::add_pointer_t<typename M::mapped_type>(onNotFound())};
+    }
+  }
+
+  return {NO_ERROR, &found->second};
+}
+
+template <class M, class F>
+Return<std::add_pointer_t<std::add_const_t<typename M::mapped_type>>>
+MapGetCPtrOr(const M &map, typename M::key_type &key, F &&onNotFound) {
+  auto found = map.find(key);
+
+  if (found == map.end()) {
+    if constexpr (std::is_same_v<std::invoke_result_t<F>, void>) {
+      onNotFound();
+      return {ERROR_KEY_NOT_FOUND_IN_MAP};
+    } else {
+      return {ERROR_KEY_NOT_FOUND_IN_MAP,
+              std::add_pointer_t<std::add_const_t<typename M::mapped_type>>(
+                  onNotFound())};
+    }
+  }
+
+  return {NO_ERROR, &found->second};
+}
+
+prime::common::Return<uint32> GetClassFromExtension(std::string_view ext);
 std::string_view GetExtentionFromHash(uint32 hash);
 
 namespace detail {
@@ -172,6 +226,7 @@ HASH_CLASS(int32);
 HASH_CLASS(float);
 HASH_CLASS(JenHash);
 HASH_CLASS(JenHash3);
+HASH_CLASS(prime::common::ResourceBase);
 
 union Color {
   struct {

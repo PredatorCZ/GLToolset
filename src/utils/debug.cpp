@@ -53,20 +53,20 @@ ResourceDebugPlayground::AddDebugClass(const reflect::Class *cls) {
       Pointer<ResourceDebugDataType> newType = ArrayEmplace(newMember->types);
       *newType = member.types[t];
       if (member.types[t].type == reflect::Type::Class) {
-        const reflect::Class *subCls =
-            reflect::GetReflectedClass(member.types[t].hash);
+        reflect::GetReflectedClass(member.types[t].hash)
+            .Success([&](const reflect::Class *subCls) {
+              auto found = std::find_if(
+                  main->classes.begin(), main->classes.end(),
+                  [subCls](const ResourceDebugClass &cls) {
+                    return std::string_view(cls.className) == subCls->className;
+                  });
 
-        auto found = std::find_if(main->classes.begin(), main->classes.end(),
-                                  [subCls](const ResourceDebugClass &cls) {
-                                    return std::string_view(cls.className) ==
-                                           subCls->className;
-                                  });
-
-        if (found == main->classes.end()) {
-          Link(newType->definition, AddDebugClass(subCls).operator->());
-        } else {
-          Link(newType->definition, found);
-        }
+              if (found == main->classes.end()) {
+                Link(newType->definition, AddDebugClass(subCls).operator->());
+              } else {
+                Link(newType->definition, found);
+              }
+            }).Unused();
       }
     }
   }

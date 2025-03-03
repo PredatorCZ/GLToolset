@@ -66,13 +66,19 @@ template <> class prime::common::InvokeGuard<prime::graphics::VertexArray> {
       prime::common::AddResourceHandle<prime::graphics::VertexArray>({
           .Process =
               [](ResourceData &data) {
-                auto hdr = data.As<graphics::VertexArray>();
-                AddVertexArray(*hdr);
+                data.As<graphics::VertexArray>()
+                    .Success([&](graphics::VertexArray *hdr) {
+                      AddVertexArray(*hdr);
+                    })
+                    .Unused();
               },
           .Delete =
               [](ResourceData &data) {
-                auto hdr = data.As<graphics::VertexArray>();
-                FreeVertexArray(*hdr);
+                data.As<graphics::VertexArray>()
+                    .Success([&](graphics::VertexArray *hdr) {
+                      FreeVertexArray(*hdr);
+                    })
+                    .Unused();
               },
       });
 };

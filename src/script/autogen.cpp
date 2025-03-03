@@ -8,6 +8,7 @@
 #include <vector>
 
 namespace pr = prime::reflect;
+namespace pc = prime::common;
 
 namespace prime::reflect {
 std::map<uint32, const Class *> &GetClasses();
@@ -93,19 +94,20 @@ void WalkClasses(std::set<const void *> &items, Linked &lnk,
   str << lnk.definition.str();
 }
 
-const pr::Class *RequestClass(uint32 hash, const pr::Class *parent) {
-  const pr::Class *cls = pr::GetReflectedClass(hash);
-  LINKED_CLASSES[cls].referencedBy.emplace_back(parent);
-  LINKED_CLASSES[parent].references.emplace_back(cls);
-  return cls;
+pc::Return<const pr::Class *> RequestClass(uint32 hash,
+                                           const pr::Class *parent) {
+  return pr::GetReflectedClass(hash).Success([&](const pr::Class *cls) {
+    LINKED_CLASSES[cls].referencedBy.emplace_back(parent);
+    LINKED_CLASSES[parent].references.emplace_back(cls);
+  });
 }
 
-const pr::Enum *RequestEnum(uint32 hash, const pr::Class *parent) {
-  const pr::Enum *cls = pr::GetReflectedEnum(hash);
-  LINKED_CLASSES[cls].referencedBy.emplace_back(parent);
-  LINKED_CLASSES[parent].references.emplace_back(cls);
-  LINKED_CLASSES[cls].isEnum = true;
-  return cls;
+pc::Return<const pr::Enum *> RequestEnum(uint32 hash, const pr::Class *parent) {
+  return pr::GetReflectedEnum(hash).Success([&](const pr::Enum *cls) {
+    LINKED_CLASSES[cls].referencedBy.emplace_back(parent);
+    LINKED_CLASSES[parent].references.emplace_back(cls);
+    LINKED_CLASSES[cls].isEnum = true;
+  });
 }
 
 void AppendClassName(std::ostream &str, std::string_view clName) {
@@ -177,23 +179,41 @@ void MakeType(std::ostream &str, const pr::DataType *types, uint32 idx,
     str << "ExternalResource";
     if (type.hash) {
       str << '<';
-      AppendClassName(str, RequestClass(type.hash, owner)->className);
+      RequestClass(type.hash, owner)
+          .Either(
+              [&](const pr::Class *cls) {
+                AppendClassName(str, cls->className);
+              },
+              [&] { AppendClassName(str, "__UNREGISTERED__"); })
+          .Unused();
       str << '>';
     }
     break;
   case pr::Type::Class:
-    AppendClassName(str, RequestClass(type.hash, owner)->className);
+    RequestClass(type.hash, owner)
+        .Either(
+            [&](const pr::Class *cls) { AppendClassName(str, cls->className); },
+            [&] { AppendClassName(str, "__UNREGISTERED__"); })
+        .Unused();
     break;
   case pr::Type::Enum:
-    AppendEnumName(str, RequestEnum(type.hash, owner)->name);
+    RequestEnum(type.hash, owner)
+        .Either([&](const pr::Enum *cls) { AppendEnumName(str, cls->name); },
+                [&] { AppendEnumName(str, "__UNREGISTERED__"); })
+        .Unused();
     break;
   case pr::Type::Flags:
-    AppendClassName(str, pr::GetReflectedEnum(type.hash)->name);
+    pr::GetReflectedEnum(type.hash)
+        .Either([&](const pr::Enum *cls) { AppendClassName(str, cls->name); },
+                [&] { AppendClassName(str, "__UNREGISTERED__"); })
+        .Unused();
     str << "{}";
     break;
   case pr::Type::HString:
   case pr::Type::String:
     str << "string";
+    break;
+  case pr::Type::None:
     break;
   }
 
@@ -245,7 +265,7 @@ void DumpClass(const pr::Class *cls) {
 
     case pr::Container::Pointer:
       str << "\"";
-      AppendClassName(str, pr::GetReflectedClass(type.hash)->className);
+      AppendClassName(str, pr::GetReflectedClass(type.hash).retVal->className);
       str << ":\"";
       break;
 
@@ -257,7 +277,8 @@ void DumpClass(const pr::Class *cls) {
       case pr::Type::ExternalResource:
         str << '"';
         if (type.hash) {
-          AppendClassName(str, pr::GetReflectedClass(type.hash)->className);
+          AppendClassName(str,
+                          pr::GetReflectedClass(type.hash).retVal->className);
         } else {
           str << "none";
         }
@@ -296,15 +317,26 @@ void DumpClass(const pr::Class *cls) {
         break;
       case pr::Type::Flags: {
         str << "{\n";
-        auto enums = pr::GetReflectedEnum(type.hash);
-        for (uint32 i = 0; i < enums->nMembers; i++) {
-          str << "    " << enums->names[i] << " = false\n";
-        }
+        pr::GetReflectedEnum(type.hash)
+            .Either(
+                [&](const pr::Enum *enums) {
+                  for (uint32 i = 0; i < enums->nMembers; i++) {
+                    str << "    " << enums->names[i] << " = false\n";
+                  }
+                },
+                [&] { str << "    __UNREGISTERED__\n"; })
+            .Unused();
         str << "  }";
         break;
       }
       case pr::Type::Class:
-        AppendClassName(str, RequestClass(type.hash, cls)->className);
+        RequestClass(type.hash, cls)
+            .Either(
+                [&](const pr::Class *cls) {
+                  AppendClassName(str, cls->className);
+                },
+                [&] { AppendClassName(str, "__UNREGISTERED__"); })
+            .Unused();
         str << "()";
         break;
       case pr::Type::Enum: {

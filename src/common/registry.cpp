@@ -13,17 +13,14 @@ auto &RegistryHE() {
   return REGISTRY_HE;
 };
 
-uint32 prime::common::GetClassFromExtension(std::string_view ext) {
+prime::common::Return<uint32> prime::common::GetClassFromExtension(std::string_view ext) {
   prime::common::ExtString key;
   memcpy(key.c, ext.data(), std::min(sizeof(key) - 1, ext.size()));
 
-  auto found = RegistryEH().find(key);
-
-  if (found == RegistryEH().end()) {
+  return MapGetOr(RegistryEH(), key, [&]{
+    common::RuntimeError("Cannot find extension %s in class registry.", ext.data());
     return 0;
-  }
-
-  return found->second;
+  });
 }
 
 std::string_view prime::common::GetExtentionFromHash(uint32 hash) {

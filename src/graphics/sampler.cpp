@@ -61,8 +61,10 @@ template <> class prime::common::InvokeGuard<prime::graphics::Sampler> {
       prime::common::AddResourceHandle<prime::graphics::Sampler>({
           .Process =
               [](ResourceData &data) {
-                auto hdr = data.As<graphics::Sampler>();
-                prime::graphics::AddSampler(data.hash.name, *hdr);
+                data.As<graphics::Sampler>().Success(
+                    [&](graphics::Sampler *hdr) {
+                      prime::graphics::AddSampler(data.hash.name, *hdr);
+                    }).Unused();
               },
           .Delete = nullptr,
       });

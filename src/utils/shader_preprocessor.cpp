@@ -157,12 +157,19 @@ template <> class prime::common::InvokeGuard<prime::utils::ShaderPreprocessor> {
                   common::LoadResource(common::MakeHash<char>(hash.name), true);
                   auto &refs = REFERENCES.at(hash.name);
                   for (auto &ref : refs) {
-                    GetClassHandle(ref.type).Update(ref);
+                    GetClassHandle(ref.type)
+                        .Success([&](const ResourceHandle *item) {
+                          item->Update(ref);
+                        })
+                        .Unused();
                   }
                 } else {
                   GetClassHandle(common::GetClassHash<graphics::StageObject>())
-                      .Update(
-                          common::MakeHash<graphics::StageObject>(hash.name));
+                      .Success([&](const ResourceHandle *item) {
+                        item->Update(
+                            common::MakeHash<graphics::StageObject>(hash.name));
+                      })
+                      .Unused();
                 }
               },
       });
