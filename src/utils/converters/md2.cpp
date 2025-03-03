@@ -691,10 +691,7 @@ void ProcessMD2(AppContext *ctx) {
 
     std::vector<TextureSlot> textures;
 
-    static const auto texExt = pc::GetClassExtension<pg::Texture>();
-
     {
-      auto outTexture = newBranch.ChangeExtension2(texExt);
       auto texHash = debugPg.AddRef(newBranch.GetFullPathNoExt(),
                                     pc::GetClassHash<pg::Texture>());
       textures.emplace_back(
@@ -703,11 +700,7 @@ void ProcessMD2(AppContext *ctx) {
 
     try {
       ctx->FindFile(outDir + std::string(newBranch.GetFolder()),
-                    "^" + std::string(newBranch.GetFilename()) + "_normal." +
-                        std::string(texExt) + "$");
-      std::string normalTexture(
-          newBranch.ChangeExtension("_normal." + std::string(texExt)));
-
+                    "^" + std::string(newBranch.GetFilename()) + "_normal.");
       auto texHash = debugPg.AddRef(newBranch.ChangeExtension("_normal"),
                                     pc::GetClassHash<pg::Texture>());
       textures.emplace_back(
@@ -721,11 +714,7 @@ void ProcessMD2(AppContext *ctx) {
 
     try {
       ctx->FindFile(outDir + std::string(newBranch.GetFolder()),
-                    "^" + std::string(newBranch.GetFilename()) + "_fx." +
-                        std::string(texExt) + "$");
-      std::string glowTexture(
-          newBranch.ChangeExtension("_fx." + std::string(texExt)));
-
+                    "^" + std::string(newBranch.GetFilename()) + "_fx.");
       auto texHash = debugPg.AddRef(newBranch.ChangeExtension("_fx"),
                                     pc::GetClassHash<pg::Texture>());
       textures.emplace_back(

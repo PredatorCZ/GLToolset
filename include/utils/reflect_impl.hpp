@@ -6,8 +6,8 @@
 #include "common/local_pointer.hpp"
 #include "common/pointer.hpp"
 #include "common/resource.hpp"
-#include "common/variant.hpp"
 #include "common/string.hpp"
+#include "common/variant.hpp"
 #include "spike/type/flags.hpp"
 #include "spike/type/vectors_simd.hpp"
 #include <glm/gtx/dual_quaternion.hpp>
@@ -174,8 +174,7 @@ struct BuildDataTypesDetail<prime::common::Variant<C...>, 0> {
           },
           0,
       },
-      GetType<C>()...
-  };
+      GetType<C>()...};
 };
 
 template <class C> struct BuildDataTypesDetail<C, 1> {
@@ -220,7 +219,7 @@ template <class C>
 consteval Member MakeMember(const char *name, uint32 offset) {
   return Member{
       .name = name,
-      .types = BuildDataTypes<C>::TYPES,
+      .types = BuildDataTypes<std::remove_reference_t<C>>::TYPES,
       .nTypes = GetTypeDepth<C>() + 1,
       .offset = offset,
   };
@@ -254,6 +253,10 @@ int AddEnum(const Enum *enm);
 #define MEMBER(...)                                                            \
   MakeMember<decltype(class_type::__VA_ARGS__)>(                               \
       #__VA_ARGS__, offsetof(class_type, __VA_ARGS__))
+
+#define MEMBERNAME(name, ...)                                                  \
+  MakeMember<decltype(class_type::__VA_ARGS__)>(                               \
+      name, offsetof(class_type, __VA_ARGS__))
 
 #define MEMBER_CAST(member, ...)                                               \
   MakeMember<__VA_ARGS__>(#member, offsetof(class_type, member))
