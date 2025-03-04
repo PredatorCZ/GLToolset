@@ -40,16 +40,19 @@ struct RawImageData {
 
 uint32 GetCrc(std::istream &str);
 
-BinWritter NewFile(std::string path) {
+BinWritter NewFile(const std::string &path) {
+  std::string absPath = prime::common::CacheDataFolder() + path;
   BinWritter ostr;
 
   try {
-    ostr.Open(path);
+    ostr.Open(absPath);
   } catch (const es::FileInvalidAccessError &) {
-    AFileInfo finf(path);
+    AFileInfo finf(absPath);
     mkdirs(std::string(finf.GetFolder()));
-    ostr.Open(path);
+    ostr.Open(absPath);
   }
+
+  prime::common::RegisterResource(path).Unused();
 
   return ostr;
 }
@@ -201,28 +204,6 @@ RawImageData GetImageData(BinReaderRef rd, TextureCompiler &compiler) {
   retVal.bcSize = (x / 4) * (y / 4);
 
   return retVal;
-}
-
-template <typename fc>
-void ForEachMipmap(RawImageData &ctx, uint32 numMips, fc &&cb) {
-  cb(0);
-
-  for (uint32 m = 1; m < numMips; m++) {
-    uint32 oldWidth = ctx.width;
-    uint32 oldHeight = ctx.height;
-    ctx.MipMap();
-    uint8 *rData = static_cast<uint8 *>(malloc(ctx.rawSize));
-
-    stbir_resize_uint8_generic(                                 //
-        static_cast<uint8 *>(ctx.data), oldWidth, oldHeight, 0, //
-        rData, ctx.width, ctx.height, 0, ctx.numChannels,       //
-        STBIR_ALPHA_CHANNEL_NONE, 0, stbir_edge::STBIR_EDGE_CLAMP,
-        stbir_filter::STBIR_FILTER_DEFAULT,
-        stbir_colorspace::STBIR_COLORSPACE_LINEAR, nullptr);
-    free(ctx.data);
-    ctx.data = rData;
-    cb(m);
-  }
 }
 
 void SetupGenericFromBest(RawImageData &rawData, graphics::Texture &meta,
@@ -627,8 +608,7 @@ common::Return<void> Compile(std::string buffer, std::string_view output) {
   };
 
   std::optional<BinWritter> streams[compiler->NUM_STREAMS];
-  std::string outFile(common::CacheDataFolder());
-  outFile.append(output);
+  std::string outFile(output);
   outFile.append(common::GetClassExtension<graphics::TextureStream<0>>());
   uint32 maxUsedStream = 0;
 
@@ -785,8 +765,7 @@ common::Return<void> Compile(std::string buffer, std::string_view output) {
 
   std::string built =
       debugPg.Build(texturePg, reflect::GetReflectedClass<graphics::Texture>());
-  outFile = common::CacheDataFolder();
-  outFile.append(output);
+  outFile = output;
   outFile.append(common::GetClassExtension<graphics::Texture>());
   NewFile(outFile).WriteContainer(built);
 

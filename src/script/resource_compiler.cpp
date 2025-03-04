@@ -680,9 +680,7 @@ static SQInteger AddResource(HSQUIRRELVM v) {
           pu::CompileFunc compFunc = pu::GetCompileFunction(classHash);
 
           if (compFunc) {
-            return prime::common::RegisterResource(
-                       oPath + std::string(cls->extension))
-                .Success([&] { return compFunc(std::move(built), oPath); });
+            return compFunc(std::move(built), oPath);
           }
 
           oPath.append(cls->extension);
