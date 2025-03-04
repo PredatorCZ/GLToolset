@@ -46,7 +46,19 @@ static void LoadBindedTextureLevels(DeferredPayload pl) {
     if (hdr.flags == TextureFlag::Volume) {
       // not implemented
     } else if (hdr.flags == TextureFlag::Array) {
-      // not implemented
+      if (hdr.numDims == 2) {
+        for (auto &e : hdr.entries) {
+          uint32 height = hdr.height >> e.level;
+          uint32 width = hdr.width >> e.level;
+
+          if (std::max(height, width) >= CLAMP_RES ||
+              e.streamIndex != pl.streamIndex) {
+            continue;
+          }
+
+          minLevel = std::min(e.level, minLevel);
+        }
+      }
     } else {
       if (hdr.numDims == 1) {
         for (auto &e : hdr.entries) {
@@ -111,7 +123,21 @@ static void LoadBindedTextureLevels(DeferredPayload pl) {
     if (hdr.flags == TextureFlag::Volume) {
       // not implemented
     } else if (hdr.flags == TextureFlag::Array) {
-      // not implemented
+      if (hdr.numDims == 2) {
+        for (auto &e : hdr.entries) {
+          uint32 height = hdr.height >> e.level;
+          uint32 width = hdr.width >> e.level;
+
+          if (std::max(height, width) >= CLAMP_RES ||
+              e.streamIndex != pl.streamIndex) {
+            continue;
+          }
+
+          glCompressedTexImage3D(e.target, e.level, hdr.internalFormat, width,
+                                 height, hdr.depth, 0, e.bufferSize,
+                                 data.buffer.data() + e.bufferOffset);
+        }
+      }
     } else {
       if (hdr.numDims == 1) {
         for (auto &e : hdr.entries) {
@@ -249,11 +275,13 @@ template <> class prime::common::InvokeGuard<Texture> {
   static inline const bool data = prime::common::AddResourceHandle<Texture>({
       .Process =
           [](ResourceData &data) {
-            data.As<graphics::Texture>().Success([&](graphics::Texture *hdr) {
-              auto unit = AddTexture(*hdr, data.hash.name);
-              TEXTURE_UNITS.emplace(data.hash.name, unit);
-              TEXTURE_REMAPS.emplace(unit.id, data.hash.name);
-            }).Unused();
+            data.As<graphics::Texture>()
+                .Success([&](graphics::Texture *hdr) {
+                  auto unit = AddTexture(*hdr, data.hash.name);
+                  TEXTURE_UNITS.emplace(data.hash.name, unit);
+                  TEXTURE_REMAPS.emplace(unit.id, data.hash.name);
+                })
+                .Unused();
           },
       .Delete = nullptr,
   });
