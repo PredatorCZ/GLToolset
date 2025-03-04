@@ -31,10 +31,23 @@ struct RawImageData {
   uint32 bcSize;
 
   void MipMap() {
+    uint32 oldWidth = width;
+    uint32 oldHeight = height;
     width /= 2;
     height /= 2;
     rawSize = width * height * numChannels;
     bcSize = (width / 4) * (height / 4);
+
+    uint8 *rData = static_cast<uint8 *>(malloc(rawSize));
+
+    stbir_resize_uint8_generic(                             //
+        static_cast<uint8 *>(data), oldWidth, oldHeight, 0, //
+        rData, width, height, 0, numChannels,               //
+        STBIR_ALPHA_CHANNEL_NONE, 0, stbir_edge::STBIR_EDGE_CLAMP,
+        stbir_filter::STBIR_FILTER_DEFAULT,
+        stbir_colorspace::STBIR_COLORSPACE_LINEAR, nullptr);
+    free(data);
+    data = rData;
   }
 };
 
@@ -112,14 +125,25 @@ RawImageData GetImageData(BinReaderRef rd, TextureCompiler &compiler) {
 
   auto ClampChannels = [&](int desiredChannels) {
     char *nData = static_cast<char *>(malloc(x * y * desiredChannels));
-    memset(nData, 0, x * y * desiredChannels);
 
-    for (int p = 0; p < x * y; p++) {
-      char *destData = nData + (p * desiredChannels);
-      memcpy(destData, data + (p * channels), desiredChannels);
-      if (compiler.isNormalMap) {
-        reinterpret_cast<uint8 &>(destData[1]) =
-            0xff - reinterpret_cast<uint8 &>(destData[1]);
+    if (desiredChannels == 4 && channels == 1) { // monochrome to rgba
+      for (int p = 0; p < x * y; p++) {
+        char *destData = nData + (p * desiredChannels);
+        char source = data[p];
+        destData[0] = source;
+        destData[1] = source;
+        destData[2] = source;
+        destData[3] = -1;
+      }
+    } else {
+      memset(nData, 0, x * y * desiredChannels);
+      for (int p = 0; p < x * y; p++) {
+        char *destData = nData + (p * desiredChannels);
+        memcpy(destData, data + (p * channels), desiredChannels);
+        if (compiler.isNormalMap) {
+          reinterpret_cast<uint8 &>(destData[1]) =
+              0xff - reinterpret_cast<uint8 &>(destData[1]);
+        }
       }
     }
 
@@ -216,6 +240,9 @@ void SetupGenericFromBest(RawImageData &rawData, graphics::Texture &meta,
       meta.format = GL_RGBA;
       meta.internalFormat = GL_RGBA;
       meta.type = GL_UNSIGNED_BYTE;
+    } else if (compiler.rgbaType == TextureCompilerRGBAType::BC1) {
+      metaFlags += graphics::TextureFlag::Compressed;
+      meta.internalFormat = GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
     } else if (compiler.rgbaType == TextureCompilerRGBAType::BC3) {
       metaFlags += graphics::TextureFlag::Compressed;
       meta.internalFormat = GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
@@ -274,6 +301,13 @@ uint32 ConvertGenericSlice(BinWritterRef wr, TextureCompiler &compiler,
     if (compiler.rgbaType == TextureCompilerRGBAType::RGBA) {
       wr.WriteBuffer(reinterpret_cast<char *>(rawData.data), rawData.rawSize);
       return rawData.rawSize;
+    } else if (compiler.rgbaType == TextureCompilerRGBAType::BC1) {
+      uint32 bufferSize = rawData.bcSize * 8;
+      std::string buffer;
+      buffer.resize(bufferSize);
+      CompressBlocksBC1(&surf, reinterpret_cast<uint8_t *>(buffer.data()));
+      wr.WriteContainer(buffer);
+      return bufferSize;
     } else if (compiler.rgbaType == TextureCompilerRGBAType::BC3) {
       uint32 bufferSize = rawData.bcSize * 16;
       std::string buffer;
@@ -341,10 +375,11 @@ uint32 ConvertGenericSlice(BinWritterRef wr, TextureCompiler &compiler,
       wr.WriteBuffer(reinterpret_cast<char *>(rawData.data), rawData.rawSize);
       return rawData.rawSize;
     } else if (compiler.monochromeType == TextureCompilerMonochromeType::BC4) {
+      surf.stride = rawData.width;
       uint32 bufferSize = rawData.bcSize * 8;
       std::string buffer;
       buffer.resize(bufferSize);
-      CompressBlocksBC5(&surf, reinterpret_cast<uint8_t *>(buffer.data()));
+      CompressBlocksBC4(&surf, reinterpret_cast<uint8_t *>(buffer.data()));
       wr.WriteContainer(buffer);
       return bufferSize;
     } else if (compiler.monochromeType == TextureCompilerMonochromeType::BC7) {
@@ -580,7 +615,7 @@ common::Return<void> Compile(std::string buffer, std::string_view output) {
       meta.width = rawData.width;
       meta.depth = numSlices;
       meta.numDims = 2 + (compiler->isVolumetric && numSlices > 1);
-      meta.maxLevel = std::max(numMips - 1, 0);
+      meta.maxLevel = std::max((numMips - 1) * compiler->generateMipmaps, 0);
 
       if (meta.numDims > 2) {
         meta.flags += graphics::TextureFlag::Volume;
@@ -675,7 +710,7 @@ common::Return<void> Compile(std::string buffer, std::string_view output) {
   for (uint32 lid = 0; auto &l : slotEntries) {
     for (uint32 fid = 0; auto &f : l) {
       // next level is not provided, but first is, resize internally
-      if (lid <= metap->maxLevel && lid > 0 && !f && slotEntries[0][fid]) {
+      if (compiler->generateMipmaps && lid <= metap->maxLevel && lid > 0 && !f && slotEntries[0][fid]) {
         graphics::TextureEntry entry{
             .level = uint8(lid),
             .streamIndex = 0,
@@ -689,7 +724,7 @@ common::Return<void> Compile(std::string buffer, std::string_view output) {
           const uint32 strIndex = GetStream(r);
           BinWritterRef wr(*streams[strIndex]);
 
-          if (!entry.bufferOffset) {
+          if (!entry.bufferSize) {
             entry.bufferOffset = wr.Tell();
             entry.streamIndex = strIndex;
           }
@@ -733,7 +768,7 @@ common::Return<void> Compile(std::string buffer, std::string_view output) {
           BinWritterRef wr(*streams[strIndex]);
           SetupTexture(rData);
 
-          if (!entry.bufferOffset) {
+          if (!entry.bufferSize) {
             entry.target = TargetFromType(f->type);
             entry.bufferOffset = wr.Tell();
             entry.streamIndex = strIndex;

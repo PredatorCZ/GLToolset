@@ -3,6 +3,7 @@
 
 REFLECT(ENUM(prime::utils::TextureCompilerRGBAType),
   EMEMBER(RGBA),
+  EMEMBER(BC1),
   EMEMBER(BC3),
   EMEMBER(BC7)
   //EMEMBER(RGBA5551)
@@ -60,6 +61,7 @@ REFLECT(CLASS(prime::utils::TextureCompiler),
   MEMBER(normalType),
   MEMBER(isNormalMap),
   MEMBER(generateMipmaps),
+  MEMBER(isVolumetric),
   MEMBERNAME("streamLimitCache",streamLimit[0]),
   MEMBERNAME("streamLimitMid",streamLimit[1]),
   MEMBERNAME("streamLimitHigh",streamLimit[2]),

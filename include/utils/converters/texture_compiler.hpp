@@ -5,6 +5,7 @@
 namespace prime::utils {
 enum class TextureCompilerRGBAType : uint8 {
   RGBA,
+  BC1,
   BC3,
   BC7,
   RGBA5551,
