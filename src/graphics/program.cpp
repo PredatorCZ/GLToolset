@@ -237,7 +237,13 @@ template <> class prime::common::InvokeGuard<prime::graphics::StageObject> {
                   return;
                 }
 
-                auto &stages = STAGE_REFERENCES.at(hash.name);
+                auto found = STAGE_REFERENCES.find(hash.name);
+
+                if (found == STAGE_REFERENCES.end()) {
+                  return;
+                }
+
+                auto &stages = found->second;
 
                 for (auto &stage : stages) {
                   GetClassHandle(stage.type)
