@@ -197,8 +197,9 @@ void SQFuncState::Dump(prime::script::FuncProto *func)
                 scprintf(_SC("\n"));
             }
             }
-        }
-        else if(inst.op==_OP_LOADFLOAT) {
+        } else if(inst.op==_OP_NEWOBJ && inst._arg3 == NOT_CLASS) {
+            scprintf(_SC("[%03d] %15s %d %d %d %d %d %d\n"), (SQInt32)n,g_InstrDesc[inst.op].name,inst._arg0,inst.asClass._arg1,inst._arg2,inst._arg3, inst.asClass._arg4, inst.asClass._arg5);
+        } else if(inst.op==_OP_LOADFLOAT) {
             scprintf(_SC("[%03d] %15s %d %f %d %d\n"), (SQInt32)n,g_InstrDesc[inst.op].name,inst._arg0,*((SQFloat*)&inst._arg1),inst._arg2,inst._arg3);
         }
     /*  else if(inst.op==_OP_ARITH){

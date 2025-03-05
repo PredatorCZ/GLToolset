@@ -140,7 +140,7 @@ void Register(HSQUIRRELVM v) {
 }
 } // namespace vec3
 
-std::string CompileScript(AppContext *ctx) {
+std::string CompileScript(std::string path, std::istream &str) {
   HSQUIRRELVM v = sq_open(1024);
   sq_setprintfunc(v, printfn, printfnerr);
 
@@ -186,11 +186,11 @@ std::string CompileScript(AppContext *ctx) {
   sq_newclosure(v, RuntimeError, 0);
   sq_seterrorhandler(v);
 
-  sq_pushregistrytable(v);
+  /*sq_pushregistrytable(v);
   sq_pushstring(v, "CTX", 3);
   sq_pushuserpointer(v, ctx);
   sq_newslot(v, -3, SQFalse);
-  sq_poptop(v);
+  sq_poptop(v);*/
 
   if (SQ_SUCCEEDED(sq_compile(
           v,
@@ -202,7 +202,7 @@ std::string CompileScript(AppContext *ctx) {
             }
             return data;
           },
-          &ctx->GetStream(), ctx->workingFile.GetFullPath().data(), SQTrue))) {
+          &str, path.c_str(), SQTrue))) {
 
     // sq_pushroottable(v);
     // if (SQ_FAILED(sq_call(v, 1, SQFalse, SQTrue))) {
@@ -235,6 +235,39 @@ enum StackType {
   Float,
   CString,
   Closure,
+  Class,
+  Typename,
+  Array,
+};
+
+struct ClassDef;
+
+enum class GLType {
+  None,
+  vec2,
+  vec3,
+  vec4,
+  mat2,
+  mat3,
+  mat4,
+  Float,
+  Int,
+  UInt,
+};
+
+struct GlobalType {
+  GLType type;
+  uint32 count;
+};
+
+struct FuncArg {
+  std::string_view name;
+  GlobalType type;
+};
+
+struct FuncDef {
+  prime::script::FuncProto *proto;
+  std::vector<FuncArg> args;
 };
 
 struct StackValue {
@@ -244,7 +277,10 @@ struct StackValue {
     int64 asInt;
     float asFloat;
     SQChar *asCString;
-    prime::script::FuncProto *asClosure;
+    FuncDef *asClosure;
+    ClassDef *asClass;
+    GlobalType asType;
+    std::vector<StackValue> *asArray;
   };
 
   StackValue &operator=(SQChar *in) {
@@ -275,7 +311,7 @@ struct StackValue {
     return *this;
   }
 
-  StackValue &operator=(prime::script::FuncProto *in) {
+  StackValue &operator=(FuncDef *in) {
     asClosure = in;
     type = StackType::Closure;
 
@@ -299,6 +335,56 @@ struct StackValue {
       return *this;
     }
   }
+
+  StackValue &operator=(ClassDef *clsDef) {
+    asClass = clsDef;
+    type = StackType::Class;
+
+    return *this;
+  }
+
+  StackValue &operator=(GlobalType glob) {
+    asType = glob;
+    type = StackType::Typename;
+
+    return *this;
+  }
+
+  StackValue &operator=(std::vector<StackValue> *arr) {
+    asArray = arr;
+    type = StackType::Array;
+
+    return *this;
+  }
+};
+
+std::map<std::string_view, GLType> STR_TO_GLTYPE{{
+    {"vec2", GLType::vec2},
+    {"vec3", GLType::vec3},
+    {"vec4", GLType::vec4},
+    {"mat2", GLType::mat2},
+    {"mat3", GLType::mat3},
+    {"mat4", GLType::mat4},
+    {"float", GLType::Float},
+    {"int", GLType::Int},
+    {"uint", GLType::UInt},
+}};
+
+GlobalType FromStack(StackValue &v) {
+  GlobalType retType{};
+
+  if (v.type == StackType::CString) {
+    retType.type = STR_TO_GLTYPE.at(v.asCString);
+  } else if (v.type == StackType::Typename) {
+    return v.asType;
+  }
+
+  return retType;
+}
+
+struct ClassDef {
+  std::string_view name;
+  std::map<std::string_view, GlobalType> members;
 };
 
 void EntryPoint(SQClosure *c, HSQUIRRELVM v) {
@@ -311,33 +397,125 @@ void EntryPoint(SQClosure *c, HSQUIRRELVM v) {
   std::vector<StackType> stack(proto->stackSize);
 }
 
-enum class GLType {
-  None,
-  vec2,
-  vec3,
-  vec4,
-  mat2,
-  mat3,
-  mat4,
-  Float,
-  Int,
-  UInt,
+struct GlobalState {
+  std::map<std::string, StackValue> globals;
+  std::vector<std::string> protoBufs;
 };
 
-struct GlobalType {
-  GLType type;
-  uint32 count = 0;
-};
+void dofile(AppContext *ctx, std::string_view path, GlobalState &globals);
 
-void AppProcessFile(AppContext *ctx) {
-  std::string protoBuf = CompileScript(ctx);
-  // todo check
+template <class fn>
+StackValue execOperand(StackValue &o0, StackValue &o1, fn &&cb) {
+  bool forceFloat = o0.type == StackType::Float || o1.type == StackType::Float;
+  StackValue retVal;
+
+  if (forceFloat) {
+    float f0 = o0.type == StackType::Float ? o0.asFloat : o0.asInt;
+    float f1 = o1.type == StackType::Float ? o1.asFloat : o1.asInt;
+
+    retVal = cb(f0, f1);
+  } else {
+    retVal = cb(o0.asInt, o1.asInt);
+  }
+
+  return retVal;
+}
+
+template <class fn> bool compOperand(StackValue &o0, StackValue &o1, fn &&cb) {
+  switch (o0.type) {
+  case StackType::Bool: {
+    switch (o1.type) {
+    case StackType::Bool:
+      return cb(o0.asBool, o1.asBool);
+    case StackType::Float:
+      return cb(o0.asBool, o1.asFloat);
+    case StackType::Int:
+    case StackType::UInt:
+      return cb(o0.asBool, o1.asInt);
+    default:
+      return false;
+    }
+    break;
+  }
+
+  case StackType::Int:
+  case StackType::UInt: {
+    switch (o1.type) {
+    case StackType::Bool:
+      return cb(o0.asInt, o1.asBool);
+    case StackType::Float:
+      return cb(o0.asInt, o1.asFloat);
+    case StackType::Int:
+    case StackType::UInt:
+      return cb(o0.asInt, o1.asInt);
+    default:
+      return false;
+    }
+    break;
+  }
+
+  case StackType::Float: {
+    switch (o1.type) {
+    case StackType::Bool:
+      return cb(o0.asFloat, o1.asBool);
+    case StackType::Float:
+      return cb(o0.asFloat, o1.asFloat);
+    case StackType::Int:
+    case StackType::UInt:
+      return cb(o0.asFloat, o1.asInt);
+    default:
+      return false;
+    }
+    break;
+  }
+
+  case StackType::Array:
+    if (o1.type == StackType::Array) {
+      return cb(o0.asArray, o1.asArray);
+    }
+
+    return false;
+
+  case StackType::Class:
+    if (o1.type == StackType::Class) {
+      return cb(o0.asClass, o1.asClass);
+    }
+
+    return false;
+
+  case StackType::Closure:
+    if (o1.type == StackType::Closure) {
+      return cb(o0.asClosure, o1.asClosure);
+    }
+
+    return false;
+
+    /*case StackType::Typename:
+      if (o1.type == StackType::Typename) {
+        return cb(o0.asType, o1.asType);
+      }
+
+      return false;*/
+
+  case StackType::CString:
+    if (o1.type == StackType::CString) {
+      return cb(std::string_view(o0.asCString), std::string_view(o1.asCString));
+    }
+
+    return false;
+
+  default:
+    break;
+  }
+
+  return false;
+}
+
+void execute(AppContext *ctx, std::string &protoBuf, GlobalState &globals) {
   prime::script::FuncProto *proto =
       reinterpret_cast<prime::script::FuncProto *>(protoBuf.data());
 
   std::vector<StackValue> stack(proto->stackSize);
-
-  std::map<std::string, StackValue> globals;
 
   for (SQInstruction i : proto->instructions) {
     switch (i.op) {
@@ -348,6 +526,12 @@ void AppProcessFile(AppContext *ctx) {
 
     case _OP_LOAD: {
       stack.at(i._arg0) = proto->literals[i._arg1];
+      break;
+    }
+
+    case _OP_DLOAD: {
+      stack.at(i._arg0) = proto->literals[i._arg1];
+      stack.at(i._arg2) = proto->literals[i._arg3];
       break;
     }
 
@@ -367,14 +551,48 @@ void AppProcessFile(AppContext *ctx) {
     }
 
     case _OP_CLOSURE: {
-      stack.at(i._arg0) = &proto->functions[i._arg1];
+      prime::script::FuncProto &funcProto = proto->functions[i._arg1];
+      FuncDef *funcDef = new FuncDef();
+      funcDef->proto = &funcProto;
+
+      for (uint32 paramId = 0; auto &p : funcProto.defaultParams) {
+        StackValue tmp;
+        tmp = funcProto.parameters[paramId++];
+        FuncArg arg{
+            .name = tmp.asCString,
+            .type = FromStack(stack.at(p)),
+        };
+
+        funcDef->args.emplace_back(arg);
+      }
+
+      stack.at(i._arg0) = funcDef;
       break;
     }
 
     case _OP_CALL: {
-      //std::string_view funcName = stack.at(i._arg1).asCString;
-      //uint32 stackBase = i._arg2;
-      //uint32 numArgs = i._arg3;
+      std::string_view funcName = stack.at(i._arg1).asCString;
+      uint32 stackBase = i._arg2;
+      uint32 numArgs = i._arg3;
+
+      if (funcName == "dofile") {
+        if (numArgs != 2) {
+          printf("Incorrect number of arguments for dofile function.\n");
+        } else {
+          if (stack.at(stackBase + 1).type != StackType::CString) {
+            printf("dofile argument must be string.\n");
+          } else {
+            dofile(ctx, stack.at(stackBase + 1).asCString, globals);
+          }
+        }
+      } else if (funcName == "array") {
+        GlobalType type = FromStack(stack.at(stackBase + 2));
+        type.count = stack.at(stackBase + 1).asInt;
+        stack.at(i._arg0) = type;
+      } else {
+        printf("Function %s is not supported.\n", funcName.data());
+      }
+
       break;
     }
 
@@ -382,11 +600,201 @@ void AppProcessFile(AppContext *ctx) {
       StackValue &key = stack.at(i._arg2);
       StackValue &value = stack.at(i._arg3);
 
-      globals[key.asCString] = value;
+      globals.globals[key.asCString] = value;
       break;
     }
+
+    case _OP_NEWOBJ: {
+      switch (i._arg3) {
+      case NOT_CLASS: {
+        stack.at(i._arg0) = new ClassDef();
+        stack.at(i._arg0).asClass->name = stack.at(i.asClass._arg5).asCString;
+
+        if (i.asClass._arg4 != 0xff) {
+          printf("Classes cannot have base classes, for now....\n");
+        }
+        if (i._arg3 != 0xff) {
+          printf("Classes cannot have attributes, for now....\n");
+        }
+        break;
+      }
+
+      case NOT_ARRAY:
+        stack.at(i._arg0) = new std::vector<StackValue>();
+        break;
+
+      default:
+        break;
+      }
+
+      break;
+    }
+
+    case _OP_GET: {
+      if (i._arg1 == 0) {
+        StackValue &key = stack.at(i._arg2);
+        if (key.type == StackType::CString) {
+          stack.at(i._arg0) = globals.globals.at(key.asCString);
+          // stack.at(i._arg0) = key.asCString;
+        }
+      }
+      break;
+    }
+
+    case _OP_GETK: {
+      if (i._arg2 == 0) {
+        stack.at(i._arg0) = proto->literals[i._arg1];
+      }
+
+      break;
+    }
+
+    case _OP_NEWSLOTA: {
+      // flags: i._arg0
+      stack.at(i._arg1).asClass->members.emplace(stack.at(i._arg2).asCString,
+                                                 FromStack(stack.at(i._arg3)));
+
+      break;
+    }
+
+    case _OP_APPENDARRAY: {
+      AppendArrayType aat = AppendArrayType(i._arg2);
+      StackValue type;
+
+      switch (aat) {
+      case AppendArrayType::AAT_BOOL:
+        type = bool(i._arg1);
+        break;
+
+      case AppendArrayType::AAT_INT:
+        type = int64(i._arg1);
+        break;
+
+      case AppendArrayType::AAT_FLOAT:
+        type = reinterpret_cast<float &>(i._arg1);
+        break;
+
+      case AppendArrayType::AAT_LITERAL:
+        type = proto->literals[i._arg1];
+        break;
+
+      case AppendArrayType::AAT_STACK:
+        type = stack.at(i._arg1);
+        break;
+
+      default:
+        break;
+      }
+
+      stack.at(i._arg0).asArray->emplace_back(type);
+
+      break;
+    }
+
+    case _OP_DIV:
+      stack.at(i._arg0) = execOperand(stack.at(i._arg2), stack.at(i._arg1),
+                                      [](auto o0, auto o1) { return o0 / o1; });
+      break;
+
+    case _OP_MUL:
+      stack.at(i._arg0) = execOperand(stack.at(i._arg2), stack.at(i._arg1),
+                                      [](auto o0, auto o1) { return o0 * o1; });
+      break;
+
+    case _OP_ADD:
+      stack.at(i._arg0) = execOperand(stack.at(i._arg2), stack.at(i._arg1),
+                                      [](auto o0, auto o1) { return o0 + o1; });
+      break;
+
+    case _OP_SUB:
+      stack.at(i._arg0) = execOperand(stack.at(i._arg2), stack.at(i._arg1),
+                                      [](auto o0, auto o1) { return o0 - o1; });
+      break;
+
+    case _OP_MOD:
+      stack.at(i._arg0) = stack.at(i._arg2).asInt % stack.at(i._arg1).asInt;
+      break;
+
+    case _OP_NE:
+      stack.at(i._arg0) =
+          compOperand(stack.at(i._arg2), stack.at(i._arg1),
+                      [](auto o0, auto o1) { return o0 != o1; });
+      break;
+
+    case _OP_EQ:
+      stack.at(i._arg0) =
+          compOperand(stack.at(i._arg2), stack.at(i._arg1),
+                      [](auto o0, auto o1) { return o0 == o1; });
+      break;
+
+    case _OP_CMP:
+      switch (CmpOP(i._arg3)) {
+      case CmpOP::CMP_G:
+        stack.at(i._arg0) =
+            compOperand(stack.at(i._arg2), stack.at(i._arg1),
+                        [](auto o0, auto o1) { return o0 > o1; });
+        break;
+
+      case CmpOP::CMP_GE:
+        stack.at(i._arg0) =
+            compOperand(stack.at(i._arg2), stack.at(i._arg1),
+                        [](auto o0, auto o1) { return o0 >= o1; });
+        break;
+
+      case CmpOP::CMP_L:
+        stack.at(i._arg0) =
+            compOperand(stack.at(i._arg2), stack.at(i._arg1),
+                        [](auto o0, auto o1) { return o0 < o1; });
+        break;
+
+      case CmpOP::CMP_LE:
+        stack.at(i._arg0) =
+            compOperand(stack.at(i._arg2), stack.at(i._arg1),
+                        [](auto o0, auto o1) { return o0 >= o1; });
+        break;
+
+      default:
+        break;
+      }
+
+      break;
+
+    case _OP_PREPCALL:
+    case _OP_RETURN:
+      break;
+
+    default:
+      printf("Unimplemented operation\n");
+      break;
     }
   }
+}
+
+void dofile(AppContext *ctx, std::string_view path, GlobalState &globals) {
+  std::string absPath(ctx->workingFile.GetFolder());
+  absPath.append(path);
+  absPath.append(".nut");
+  auto rfile = ctx->RequestFile(absPath);
+  globals.protoBufs.emplace_back(CompileScript(absPath, *rfile.Get()));
+  execute(ctx, globals.protoBufs.back(), globals);
+}
+
+void AppProcessFile(AppContext *ctx) {
+  GlobalState globals;
+  globals.globals["vec2"] =  GlobalType{GLType::vec2, 0};
+  globals.globals["vec3"] =  GlobalType{GLType::vec3, 0};
+  globals.globals["vec4"] =  GlobalType{GLType::vec4, 0};
+  globals.globals["mat2"] =  GlobalType{GLType::mat2, 0};
+  globals.globals["mat3"] =  GlobalType{GLType::mat3, 0};
+  globals.globals["mat4"] =  GlobalType{GLType::mat4, 0};
+  globals.globals["float"] =  GlobalType{GLType::Float, 0};
+  globals.globals["int"] =  GlobalType{GLType::Int, 0};
+  globals.globals["uint"] =  GlobalType{GLType::UInt, 0};
+
+  globals.protoBufs.emplace_back(CompileScript(
+      std::string(ctx->workingFile.GetFullPath()), ctx->GetStream()));
+
+  execute(ctx, globals.protoBufs.back(), globals);
 
   int t = 0;
 }

@@ -3,8 +3,7 @@ numUVs <- 1;
 numUVTMs <- 1;
 transformRemaps <- [0]
 numUVs4 <- numUVs / 2;
-
-local useUVs2 = (numUVs % 2) == 1;
+useUVs2 <- (numUVs % 2) == 1;
 
 function TransformUVs() {
   psTexCoord <- array(numUVs, vec2)
